@@ -18,7 +18,7 @@ use File::stat qw(stat);
 use Catalyst::Utils;
 use IO::File;
 use IO::All;
-
+require MIME::Types;
 require Module::Runtime;
 
 my @valid_types = qw(js css directory);
@@ -82,6 +82,14 @@ sub index :Path {
     $c->detach('file_asset_request');
 }
 
+sub current_asset_request :Private {
+  my ( $self, $c, $arg, @args ) = @_;
+  
+  $c->response->header( 'Cache-Control' => 'no-cache' );
+  $c->response->redirect('/' . join('/',$self->asset_path,@args), 307);
+  return $c->detach;
+}
+
 sub file_asset_request :Private {
   my ( $self, $c, @args ) = @_;
   
@@ -99,16 +107,25 @@ sub file_asset_request :Private {
   return $c->response->body( $self->asset_fh );
 }
 
-sub directory_asset_request :Private { ... }
-
-sub current_asset_request :Private {
-  my ( $self, $c, $arg, @args ) = @_;
+sub directory_asset_request :Private {
+  my ( $self, $c, $sha1, @args ) = @_;
   
-  $c->response->header( 'Cache-Control' => 'no-cache' );
-  $c->response->redirect('/' . join('/',$self->asset_path,@args), 307);
-  return $c->detach;
+  my $want_asset = join('/',$sha1,@args);
+  
+  return $self->unknown_asset($c,$want_asset) unless ($sha1 eq $self->asset_name);
+  
+  my ($root) = $self->includes;
+  my $File = file($root,@args);
+  
+  return $self->unknown_asset($c,$want_asset) unless (-f $File);
+  
+  $c->response->header(
+    'Content-Type' => $self->_ext_to_type($File),
+    'Cache-Control' => 'public, max-age=31536000, s-max-age=31536000' # 31536000 = 1 year
+  );
+  
+  return $c->response->body( $File->openr );
 }
-
 ############################
 
 sub is_dir { return (shift)->type eq 'directory' ? 1 : 0 }
@@ -155,6 +172,32 @@ has 'lock_file', is => 'ro', lazy => 1, default => sub {
   my $self = shift;
   return File::Spec->catfile($self->work_dir,'lockfile');
 };
+
+has 'MimeTypes', is => 'ro', lazy => 1, default => sub {
+  my $self = shift;
+  return MIME::Types->new( only_complete => 1 );
+};
+
+# looks up the correct MIME type for the current file extension
+# (adapted from Static::Simple)
+sub _ext_to_type {
+  my ( $self, $full_path ) = @_;
+  my $c = $self->_app;
+
+  if ( $full_path =~ /.*\.(\S{1,})$/xms ) {
+    my $ext = $1;
+    my $type = $self->MimeTypes->mimeTypeOf( $ext );
+    if ( $type ) {
+      return ( ref $type ) ? $type->type : $type;
+    }
+    else {
+      return 'text/plain';
+    }
+  }
+  else {
+    return 'text/plain';
+  }
+}
 
 sub includes {
   my $self = shift;
