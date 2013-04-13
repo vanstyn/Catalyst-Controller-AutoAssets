@@ -81,12 +81,12 @@ sub BUILD {
 sub index :Path {
   my ( $self, $c, $arg ) = @_;
   
+  $self->prepare_asset;
+  
   return $c->detach('current_asset_request') if (
     $self->current_redirect &&
     ($arg eq 'current' || $arg eq 'current.' . $self->type)
   );
-  
-  $self->prepare_asset;
   
   return $self->is_dir ?
     $c->detach('directory_asset_request') :
@@ -122,27 +122,21 @@ sub current_asset_request :Private {
 
 ############################
 
-
-
 sub is_dir { return (shift)->type eq 'directory' ? 1 : 0 }
-
-has 'minify_class', is => 'ro', isa => 'Maybe[Str]', lazy => 1, default => sub {
-  my $self = shift;
-  if($self->type eq 'js') {
-    return 'JavaScript::Minifier';
-  }
-  elsif($self->type eq 'css') {
-    return 'CSS::Minifier';
-  }
-  return undef;
-};
 
 has 'minifier', is => 'ro', isa => 'Maybe[CodeRef]', lazy => 1, default => sub {
   my $self = shift;
-  my $class = $self->minify_class or return undef;
-  Module::Runtime::require_module($class);
-  my $func = $class . '::minify';
-  return sub { eval "$func(@_)" };
+  if($self->type eq 'css') {
+    Module::Runtime::require_module('CSS::Minifier');
+    return sub { CSS::Minifier::minify(@_) };
+  }
+  elsif($self->type eq 'js') {
+    Module::Runtime::require_module('JavaScript::Minifier');
+    return sub { JavaScript::Minifier::minify(@_) };
+  }
+  else {
+    return undef;
+  }
 };
 
 has 'work_dir', is => 'ro', lazy => 1, default => sub {
@@ -294,7 +288,7 @@ sub prepare_asset {
     $fd->write(join("\r\n",$inc_mtimes,@files) . "\r\n");
   }
   else {
-    if($self->minify) {
+    if($self->minify && $self->minifier) {
       foreach my $file (@files) {
         open(INFILE, $file) or die $!;
         $self->minifier->( input => *INFILE, outfile => $fd );
