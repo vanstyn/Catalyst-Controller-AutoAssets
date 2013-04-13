@@ -146,28 +146,25 @@ has 'work_dir', is => 'ro', lazy => 1, default => sub {
   my $tmpdir = Catalyst::Utils::class2tempdir($c)
     || Catalyst::Exception->throw("Can't determine tempdir for $c");
     
-  my $name = $self->action_namespace($c);
-  $name =~ s/\//\-/g;
-  
-  my $dir = dir($tmpdir, "AutoAssets_" . $name);
+  my $dir = dir($tmpdir, "AutoAssets",  $self->action_namespace($c));
   $dir->mkpath($c->debug) unless (-d $dir);
   return $dir->resolve;
 };
 
 has 'built_file', is => 'ro', lazy => 1, default => sub {
   my $self = shift;
-  my $filename = '_asset.' . $self->type;
+  my $filename = 'built.' . $self->type;
   return File::Spec->catfile($self->work_dir,$filename);
 };
 
 has 'fingerprint_file', is => 'ro', lazy => 1, default => sub {
   my $self = shift;
-  return File::Spec->catfile($self->work_dir,'.fingerprint');
+  return File::Spec->catfile($self->work_dir,'fingerprint');
 };
 
 has 'lock_file', is => 'ro', lazy => 1, default => sub {
   my $self = shift;
-  return File::Spec->catfile($self->work_dir,'.lockfile');
+  return File::Spec->catfile($self->work_dir,'lockfile');
 };
 
 sub get_include_files {
