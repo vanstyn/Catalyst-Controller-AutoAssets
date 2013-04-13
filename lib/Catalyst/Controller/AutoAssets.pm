@@ -23,6 +23,25 @@ require Module::Runtime;
 
 my @valid_types = qw(js css directory);
 
+has 'include', is => 'ro', isa => 'ArrayRef[Str]', required => 1;  
+has 'type', is => 'ro', isa => 'Str', required => 1;
+has 'minify', is => 'ro', isa => 'Bool', default => sub{0};
+
+######################################
+
+around BUILDARGS => sub {
+  my $orig = shift;
+  my $self = shift;
+  my %opt = (ref($_[0]) eq 'HASH') ? %{ $_[0] } : @_; # <-- arg as hash or hashref
+  
+  # poor man's coerce:
+  $opt{include} = [ $opt{include} ] if (
+    exists $opt{include} && ! ref($opt{include})
+  );
+
+  return $self->$orig(%opt);
+};
+
 sub BUILD {
   my $self = shift;
   
@@ -61,6 +80,8 @@ sub BUILD {
 sub index :Path {
   my ( $self, $c ) = @_;
   
+  $self->prepare_asset;
+  
   return $self->type eq 'directory' ?
     $c->detach('directory_asset_request') :
     $c->detach('file_asset_request');
@@ -87,11 +108,9 @@ sub directory_asset_request :Private { ... }
 
 ############################
 
-has 'include', is => 'ro', isa => 'ArrayRef[Str]', required => 1;
-#  coerce => sub { ref $_[0] ? $_[0] : [ $_[0] ] }; #<-- support single dir as a string
-  
-has 'type', is => 'ro', isa => 'Str', required => 1;
-has 'minify', is => 'ro', isa => 'Bool', default => sub{0};
+
+
+sub is_dir { return (shift)->type eq 'directory' ? 1 : 0 }
 
 has 'minify_class', is => 'ro', isa => 'Maybe[Str]', lazy => 1, default => sub {
   my $self = shift;
@@ -103,8 +122,6 @@ has 'minify_class', is => 'ro', isa => 'Maybe[Str]', lazy => 1, default => sub {
   }
   return undef;
 };
-
-
 
 has 'minifier', is => 'ro', isa => 'Maybe[CodeRef]', lazy => 1, default => sub {
   my $self = shift;
@@ -167,7 +184,6 @@ sub get_include_files {
   
   return @files;
 }
-
 
 
 has 'max_fingerprint_calc_age', is => 'ro', isa => 'Int', default => sub{(60*60*12)}; # 12 hours
@@ -245,7 +261,8 @@ sub prepare_asset {
   
   # Check the fingerprint:
   my $fingerprint = $self->calculate_fingerprint;
-  if($fingerprint && $self->current_fingerprint eq $fingerprint) {
+  my $cur_fingerprint = $self->current_fingerprint;
+  if($fingerprint && $cur_fingerprint && $cur_fingerprint eq $fingerprint) {
     # If the mtimes changed but the fingerprint matches we don't need to regenerate. 
     # This will happen if another process just built the files while we were waiting 
     # for the lock and on the very first time after the application starts up
@@ -257,7 +274,7 @@ sub prepare_asset {
   # Need to do a rebuild:
   
   my $fd = IO::File->new($self->built_file, '>:raw') or die $!;
-  if($self->type eq 'directory') {
+  if($self->is_dir) {
     # The built file is just a placeholder in the case of 'directory' type 
     # asset whose data is served from the original files
     $fd->write(join("\r\n",$inc_mtimes,@files) . "\r\n");
@@ -281,6 +298,8 @@ sub prepare_asset {
   $self->inc_mtimes($inc_mtimes);
   $self->built_mtime($self->get_built_mtime);
   $self->calculate_save_fingerprint;
+  
+  $self->_app->log->info("Built asset: " . $self->asset_path);
   
   # Release the lock and return:
   return $self->release_build_lock;
@@ -306,8 +325,14 @@ sub file_checksum {
 
 sub asset_name {
   my $self = shift;
-  $self->prepare_asset;
-  return $self->current_fingerprint . '.' . $self->type;
+  my $sha1 = $self->current_fingerprint;
+  return $self->is_dir ? $sha1 . '/' : $sha1 . '.' . $self->type;
+  return  . '.' . $self->type;
+}
+
+sub asset_path {
+  my $self = shift;
+  return $self->action_namespace($self->_app) . '/' . $self->asset_name;
 }
 
 sub asset_content_type {
