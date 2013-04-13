@@ -23,25 +23,14 @@ require Module::Runtime;
 
 my @valid_types = qw(js css directory);
 
-has 'include', is => 'ro', isa => 'ArrayRef[Str]', required => 1;  
+has 'include', is => 'ro', isa => 'Str|ArrayRef[Str]', required => 1;  
 has 'type', is => 'ro', isa => 'Str', required => 1;
 has 'minify', is => 'ro', isa => 'Bool', default => sub{0};
 has 'current_redirect', is => 'ro', isa => 'Bool', default => sub{1};
 
+
 ######################################
 
-around BUILDARGS => sub {
-  my $orig = shift;
-  my $self = shift;
-  my %opt = (ref($_[0]) eq 'HASH') ? %{ $_[0] } : @_; # <-- arg as hash or hashref
-  
-  # poor man's coerce:
-  $opt{include} = [ $opt{include} ] if (
-    exists $opt{include} && ! ref($opt{include})
-  );
-
-  return $self->$orig(%opt);
-};
 
 sub BUILD {
   my $self = shift;
@@ -52,7 +41,7 @@ sub BUILD {
   ) unless ($type ~~ @valid_types); # Would much rather be doing this with an 'Enum' type constraint
   
   Catalyst::Exception->throw("Must include at least one file/directory")
-    unless (scalar @{$self->include} > 0);
+    unless ($self->include_count > 0);
   
   # The 'directory' type is a passthrough mode of operation
   if ($self->type eq 'directory') {
@@ -62,9 +51,9 @@ sub BUILD {
     
     Catalyst::Exception->throw(
       "Only one include directory is allowed with 'directory' asset type"
-    ) unless (scalar @{$self->include} == 1);
+    ) unless ($self->include_count == 1);
     
-    my $root = $self->include->[0];
+    my ($root) = $self->includes;
     
     Catalyst::Exception->throw("Bad include path '$root'")
       unless (-d $root);
@@ -167,11 +156,21 @@ has 'lock_file', is => 'ro', lazy => 1, default => sub {
   return File::Spec->catfile($self->work_dir,'lockfile');
 };
 
+sub includes {
+  my $self = shift;
+  return ref $self->include ? @{$self->include} : $self->include;
+}
+
+sub include_count {
+  my $self = shift;
+  return ref $self->include ? scalar @{$self->include} : 1;
+}
+
 sub get_include_files {
   my $self = shift;
-  
+
   my @files = ();
-  for my $inc (@{$self->include}) {
+  for my $inc ($self->includes) {
     $inc = dir($inc)->absolute;
     if(-f $inc) {
       push @files, $inc;
@@ -186,8 +185,8 @@ sub get_include_files {
       Catalyst::Exception->throw("AutoAsset include path '$inc' not found");
     }
   }
-  
-  return @files;
+    
+  return \@files;
 }
 
 
@@ -203,15 +202,16 @@ sub get_built_mtime {
 has 'inc_mtimes', is => 'rw', isa => 'Maybe[Str]', default => undef;
 sub get_inc_mtime_concat {
   my $self = shift;
-  my $list = shift || [ $self->get_include_files ];
+  my $list = shift;
   return join('-', map { stat($_)->mtime } @$list );
 }
 
 
 sub calculate_fingerprint {
   my $self = shift;
+  my $list = shift;
   # include both the include (source) and built (output) in the fingerprint:
-  my $sha1 = $self->file_checksum($self->get_include_files,$self->built_file);
+  my $sha1 = $self->file_checksum(@$list,$self->built_file);
   $self->last_fingerprint_calculated(time) if ($sha1);
   return $sha1;
 }
@@ -247,8 +247,10 @@ sub prepare_asset {
   
   file($self->built_file)->touch unless (-e $self->built_file);
   
-  my @files = $self->get_include_files;
-  my $inc_mtimes = $self->get_inc_mtime_concat(\@files);
+  # For 'directory' only consider the mtime of the top directory and don't
+  # read in all the files yet
+  my $files = $self->is_dir ? [ $self->includes ] : $self->get_include_files;
+  my $inc_mtimes = $self->get_inc_mtime_concat($files);
   my $built_mtime = $self->get_built_mtime;
   
   # Check cached mtimes to see if anything has changed. This is a lighter
@@ -260,12 +262,15 @@ sub prepare_asset {
     $self->built_mtime eq $built_mtime
   );
   
+  # Get the real list of files that we put off above for 'directory' assets
+  $files = $self->get_include_files if ($self->is_dir);
+  
   # --- Blocks for up to 2 minutes waiting to get an exclusive lock or dies
   $self->get_build_lock;
   # ---
   
   # Check the fingerprint:
-  my $fingerprint = $self->calculate_fingerprint;
+  my $fingerprint = $self->calculate_fingerprint($files);
   my $cur_fingerprint = $self->current_fingerprint;
   if($fingerprint && $cur_fingerprint && $cur_fingerprint eq $fingerprint) {
     # If the mtimes changed but the fingerprint matches we don't need to regenerate. 
@@ -282,11 +287,11 @@ sub prepare_asset {
   if($self->is_dir) {
     # The built file is just a placeholder in the case of 'directory' type 
     # asset whose data is served from the original files
-    $fd->write(join("\r\n",$inc_mtimes,@files) . "\r\n");
+    $fd->write(join("\r\n",$inc_mtimes,@$files) . "\r\n");
   }
   else {
     if($self->minify && $self->minifier) {
-      foreach my $file (@files) {
+      foreach my $file (@$files) {
         open(INFILE, $file) or die $!;
         $self->minifier->( input => *INFILE, outfile => $fd );
         close INFILE;
@@ -294,7 +299,7 @@ sub prepare_asset {
       }
     }
     else {
-      $fd->write($_) for ( map { io($_)->slurp . "\r\n" } @files );
+      $fd->write($_) for ( map { io($_)->slurp . "\r\n" } @$files );
     }
   }
   $fd->close;
