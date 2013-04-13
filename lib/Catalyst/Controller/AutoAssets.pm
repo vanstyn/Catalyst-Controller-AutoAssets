@@ -26,6 +26,7 @@ my @valid_types = qw(js css directory);
 has 'include', is => 'ro', isa => 'ArrayRef[Str]', required => 1;  
 has 'type', is => 'ro', isa => 'Str', required => 1;
 has 'minify', is => 'ro', isa => 'Bool', default => sub{0};
+has 'current_redirect', is => 'ro', isa => 'Bool', default => sub{1};
 
 ######################################
 
@@ -78,11 +79,16 @@ sub BUILD {
 
 #############################
 sub index :Path {
-  my ( $self, $c ) = @_;
+  my ( $self, $c, $arg ) = @_;
+  
+  return $c->detach('current_asset_request') if (
+    $self->current_redirect &&
+    ($arg eq 'current' || $arg eq 'current.' . $self->type)
+  );
   
   $self->prepare_asset;
   
-  return $self->type eq 'directory' ?
+  return $self->is_dir ?
     $c->detach('directory_asset_request') :
     $c->detach('file_asset_request');
 }
@@ -105,6 +111,14 @@ sub file_asset_request :Private {
 }
 
 sub directory_asset_request :Private { ... }
+
+sub current_asset_request :Private {
+  my ( $self, $c, $arg, @args ) = @_;
+  
+  $c->response->header( 'Cache-Control' => 'no-cache' );
+  $c->response->redirect('/' . join('/',$self->asset_path,@args), 307);
+  return $c->detach;
+}
 
 ############################
 
@@ -326,7 +340,7 @@ sub file_checksum {
 sub asset_name {
   my $self = shift;
   my $sha1 = $self->current_fingerprint;
-  return $self->is_dir ? $sha1 . '/' : $sha1 . '.' . $self->type;
+  return $self->is_dir ? $sha1 : $sha1 . '.' . $self->type;
   return  . '.' . $self->type;
 }
 
