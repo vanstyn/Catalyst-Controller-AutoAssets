@@ -21,13 +21,28 @@ use IO::All;
 require MIME::Types;
 require Module::Runtime;
 
-my @valid_types = qw(js css directory);
-
+# Directories to include
 has 'include', is => 'ro', isa => 'Str|ArrayRef[Str]', required => 1;  
+
+# The type of asset. 'js' and 'css' produce single-file content, while
+# 'directory' host the directory structure of the original/include files
+my @valid_types = qw(js css directory);
 has 'type', is => 'ro', isa => 'Str', required => 1;
+
+# Applies only to js or css, if true, tries to minify files
 has 'minify', is => 'ro', isa => 'Bool', default => sub{0};
+
+# Whether or not to make the current asset available via 307 redirect to the
+# real checksum path
 has 'current_redirect', is => 'ro', isa => 'Bool', default => sub{1};
 
+# Max number of seconds before recalculating the fingerprint (sha1 checksum)
+# regardless of whether or not the mtime has changed. 0 means infinite/disabled
+has 'max_fingerprint_calc_age', is => 'ro', isa => 'Int', 
+  default => sub{(60*60*12)}; # 12 hours
+
+# Max number of seconds to wait to obtain a lock (to be thread safe)
+has 'max_lock_wait', is => 'ro', isa => 'Int', default => 120;
 
 ######################################
 
@@ -86,7 +101,7 @@ sub current_asset_request :Private {
   my ( $self, $c, $arg, @args ) = @_;
   
   $c->response->header( 'Cache-Control' => 'no-cache' );
-  $c->response->redirect('/' . join('/',$self->asset_path,@args), 307);
+  $c->response->redirect(join('/',$self->asset_path,@args), 307);
   return $c->detach;
 }
 
@@ -114,9 +129,7 @@ sub directory_asset_request :Private {
   
   return $self->unknown_asset($c,$want_asset) unless ($sha1 eq $self->asset_name);
   
-  my ($root) = $self->includes;
-  my $File = file($root,@args);
-  
+  my $File = $self->_get_sub_file(@args);
   return $self->unknown_asset($c,$want_asset) unless (-f $File);
   
   $c->response->header(
@@ -199,6 +212,13 @@ sub _ext_to_type {
   }
 }
 
+# for directory type only:
+sub _get_sub_file {
+  my $self = shift;
+  my ($root) = $self->includes;
+  return file($root,@_);
+}
+
 sub includes {
   my $self = shift;
   return ref $self->include ? @{$self->include} : $self->include;
@@ -232,8 +252,6 @@ sub get_include_files {
   return \@files;
 }
 
-
-has 'max_fingerprint_calc_age', is => 'ro', isa => 'Int', default => sub{(60*60*12)}; # 12 hours
 has 'last_fingerprint_calculated', is => 'rw', isa => 'Maybe[Int]', default => sub{undef};
 
 has 'built_mtime', is => 'rw', isa => 'Maybe[Str]', default => sub{undef};
@@ -248,7 +266,6 @@ sub get_inc_mtime_concat {
   my $list = shift;
   return join('-', map { stat($_)->mtime } @$list );
 }
-
 
 sub calculate_fingerprint {
   my $self = shift;
@@ -281,6 +298,7 @@ sub calculate_save_fingerprint {
 sub fingerprint_calc_current {
   my $self = shift;
   my $last = $self->last_fingerprint_calculated or return 0;
+  return 1 if ($self->max_fingerprint_calc_age == 0); # <-- 0 means infinite
   return 1 if (time - $last < $self->max_fingerprint_calc_age);
   return 0;
 }
@@ -384,8 +402,15 @@ sub asset_name {
 }
 
 sub asset_path {
-  my $self = shift;
-  return $self->action_namespace($self->_app) . '/' . $self->asset_name;
+  my ($self, @subpath) = @_;
+  my $base = '/' . $self->action_namespace($self->_app) . '/' . $self->asset_name;
+  return $base unless (scalar @subpath > 0);
+  Catalyst::Exception->throw("Cannot use subpath with non directory asset")
+    unless $self->is_dir;
+  my $File = $self->_get_sub_file(@subpath);
+  my $path = join('/',@subpath);
+  Catalyst::Exception->throw("sub file '$path' not found") unless (-f $File);
+  return join('/',$base,$path);
 }
 
 sub asset_content_type {
@@ -419,8 +444,6 @@ sub unknown_asset {
   $c->res->status(404);
   return $c->res->body("No such asset '$asset'");
 }
-
-has 'max_lock_wait', is => 'ro', isa => 'Int', default => 120;
 
 sub get_build_lock_wait {
   my $self = shift;
