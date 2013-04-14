@@ -14,8 +14,8 @@ use Path::Class 0.32 qw( dir file );
 use Fcntl qw( :DEFAULT :flock :seek F_GETFL );
 use File::stat qw(stat);
 use Catalyst::Utils;
-use Digest::SHA1;
 
+require Digest::SHA1;
 require MIME::Types;
 require Module::Runtime;
 
@@ -85,17 +85,17 @@ sub index :Path {
   
   $self->prepare_asset;
   
-  return $c->detach('current_asset_request') if (
+  return $c->detach('cur_request') if (
     $self->current_redirect &&
     ($arg eq 'current' || $arg eq 'current.' . $self->type)
   );
   
   return $self->is_dir ?
-    $c->detach('directory_asset_request') :
-    $c->detach('file_asset_request');
+    $c->detach('dir_request') :
+    $c->detach('file_request');
 }
 
-sub current_asset_request :Private {
+sub cur_request :Private {
   my ( $self, $c, $arg, @args ) = @_;
   
   $c->response->header( 'Cache-Control' => 'no-cache' );
@@ -103,7 +103,7 @@ sub current_asset_request :Private {
   return $c->detach;
 }
 
-sub file_asset_request :Private {
+sub file_request :Private {
   my ( $self, $c, @args ) = @_;
   
   my $want_asset = join('/',@args);
@@ -120,7 +120,7 @@ sub file_asset_request :Private {
   return $c->response->body( $self->asset_fh );
 }
 
-sub directory_asset_request :Private {
+sub dir_request :Private {
   my ( $self, $c, $sha1, @args ) = @_;
   
   my $want_asset = join('/',$sha1,@args);
