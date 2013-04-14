@@ -2,8 +2,7 @@ package Catalyst::Controller::AutoAssets;
 use strict;
 use warnings;
 
-# VERSION
-# ABSTRACT: Controller for serving checksum-based assets
+our $VERSION = 0.10;
 
 use Moose;
 use namespace::autoclean;
@@ -34,10 +33,12 @@ has 'minify', is => 'ro', isa => 'Bool', default => sub{0};
 # real, current checksum/fingerprint asset path
 has 'current_redirect', is => 'ro', isa => 'Bool', default => sub{1};
 
+# What string to use for the 'current' redirect
+has 'current_alias', is => 'ro', isa => 'Str', default => sub { 'current' };
+
 # Max number of seconds before recalculating the fingerprint (sha1 checksum)
 # regardless of whether or not the mtime has changed. 0 means infinite/disabled
-has 'max_fingerprint_calc_age', is => 'ro', isa => 'Int', 
-  default => sub{(60*60*12)}; # 12 hours
+has 'max_fingerprint_calc_age', is => 'ro', isa => 'Int', default => sub {0};
 
 # Max number of seconds to wait to obtain a lock (to be thread safe)
 has 'max_lock_wait', is => 'ro', isa => 'Int', default => 120;
@@ -90,7 +91,7 @@ sub index :Path {
   
   return $c->detach('cur_request') if (
     $self->current_redirect &&
-    ($arg eq 'current' || $arg eq 'current.' . $self->type)
+    ($arg eq $self->current_alias || $arg eq $self->current_alias . '.' . $self->type)
   );
   
   return $self->is_dir ? $c->detach('dir_request') : $c->detach('file_request');
@@ -156,6 +157,19 @@ has 'minifier', is => 'ro', isa => 'Maybe[CodeRef]', lazy => 1, default => sub {
     return undef;
   }
 };
+
+has 'asset_content_type', is => 'ro', isa => 'Str', lazy => 1, default => sub {
+  my $self = shift;
+  if ($self->type eq 'js') {
+    return 'text/javascript';
+  }
+  elsif ($self->type eq 'css') {
+    return 'text/css';
+  }
+  else {
+    return undef;
+  }
+}
 
 has 'work_dir', is => 'ro', lazy => 1, default => sub {
   my $self = shift;
@@ -412,18 +426,7 @@ sub asset_path {
   return join('/',$base,$path);
 }
 
-sub asset_content_type {
-  my $self = shift;
-  if ($self->type eq 'js') {
-    return 'text/javascript';
-  }
-  elsif ($self->type eq 'css') {
-    return 'text/css';
-  }
-  else {
-    return undef;
-  }
-}
+
 
 
 sub asset_fh {
@@ -484,6 +487,266 @@ sub end :Private {
 }
 
 
-
-
 1;
+
+__END__
+
+=pod
+
+=head1 NAME
+
+Catalyst::Controller::AutoAssets - Automatic asset serving via sha1-based URLs
+
+=head1 VERSION
+
+version 0.10
+
+=head1 SYNOPSIS
+
+In your controller:
+
+  package MyApp::Controller::Assets::MyCSS;
+  use parent 'Catalyst::Controller::AutoAssets';
+  
+  1;
+
+Then, in your .conf:
+
+  <Controller::Assets::MyCSS>
+    include   root/my_stylesheets/
+    type      css
+    minify    1
+  </Controller::Assets::MyCSS>
+
+And in your .tt files:
+
+  <head>
+    <link rel="stylesheet" type="text/css" href="[% c.controller('Assets::MyCSS').asset_path %]" />
+  </head>
+
+Or, in static HTML:
+
+  <head>
+    <link rel="stylesheet" type="text/css" href="/assets/mycss/current.css" />
+  </head>
+  
+
+=head1 DESCRIPTION
+
+Fast, convenient serving of assets (css, javascript, etc) at URL path(s) containing a sha1 
+checksum of the content. This is an alternative/supplement to L<Catalyst::Plugin::Static::Simple> or
+external/webserver for serving of an application's "nearly static" content.
+
+The benefit of serving files through CAS paths ("content-addressable storage" - same design used by Git) 
+is that it automatically alleviates client caching issues while still allowing for 
+maximum aggressive cache settings. Because URL paths contain the sha1 checksum of the data, 
+browsers can safely cache the content forever because "changes" automatically become new URLs. 
+If the content (CSS, JavaScript or other) is modified later on, the client browsers instantly 
+see the new version.
+
+This is particularly useful when deploying new versions of an application where client browsers
+out in the network might have cached CSS and JavaScript from previous versions. Instead of asking 
+users to hit "F5", everyone gets the new content automagically, with no intervention required. 
+All you have to do is change the content; the module handles the rest.
+
+This module also provides some optional extra features that are useful in both development and
+production environments for automatically managing, minifying and deploying CSS and JavaScript assets.
+
+=head1 CONFIG PARAMS
+
+=head2 type
+
+B<Required> - The asset type: C<directory>, C<css> or C<js>.
+
+The C<directory> asset type works in a similar manner as Static::Simple to make some directory
+structure accessible at a public URL. The root of the structure is made available at the URL path:
+
+  <CONTROLLER_PATH>/<SHA1>/
+
+L<MIME::Types> is used to set the C<Content-Type> HTTP header based on
+the file extension (same as Static::Simple does).
+
+Because the sha1 checksum changes automatically and is unknown in advance, the above Asset Path is made available
+via the C<asset_path()> controller method for use in TT files and throughout the application.
+
+The C<css> and C<js> types serve one automatically generated text file that is concatenated and
+optionally minified from the include files. The single, generated file is made available at the URL 
+Path:
+
+  <CONTROLLER_PATH>/<SHA1>.js    # for 'js' type
+  <CONTROLLER_PATH>/<SHA1>.css   # for 'css' type
+
+The js/css types provide a bonus mode of operation to provide a simple and convenient way to 
+manage groups of CSS and JavaScript files to be automatically deployed in the application. This
+is also particularly useful during development. Production applications with their own management
+and build process for CSS and JavaScript would simply use the C<directory> type.
+
+=head2 include
+
+B<Required> - String or ArrayRef. The path(s) on the local filesystem containing the source asset files. 
+For C<directory> type this must be exactly one directory, while for C<css> and C<js> it can
+be a list of directories. The C<include> directory becomes the root of the files hosted as-is
+for the C<directory> type, while for C<css> and C<js> asset types it is the include files 
+concatinated together (and possibly minified) to be served as the single file.
+
+=head2 current_redirect
+
+Whether or not to make the current asset available via 307 redirect to the
+real, current checksum/fingerprint asset path. This is a pure HTTP mechanism of resolving the
+asset path.
+
+  <CONTROLLER_PATH>/current/      # for 'directory' type
+  <CONTROLLER_PATH>/current.js    # for 'js' type
+  <CONTROLLER_PATH>/current.css   # for 'css' type
+
+For instance, you might reference a CSS file from a C<directory> asset C<Controller::Assets::ExtJS> 
+using this URL path (i.e. href in an HTML C<link> tag):
+
+  /assets/extjs/current/resources/css/ext-all.css
+
+This path would redirect (HTTP 307) to the current asset/file path which would be something like:
+
+  /assets/extjs/1512834162611db1fab246dfa87e3a37f68ed95f/resources/css/ext-all.css
+
+The downside of this is that the server has to serve the non-cachable redirect every time, which 
+partially defeats the performance benefits of this module (although the redirect is comparatively lightweight).
+
+The other mechanism to find the current asset path is via the C<asset_path()> method, which returns
+the current path outright and is the recommended usage, but is only available in locations where 
+application controller methods can be called (like in TT files).
+
+Defaults to true (1).
+
+=head2 current_alias
+
+Alias to use for the C<current_redirect>. Defaults to 'current' (which also implies 'current.js'/'current.css'
+for C<js> and C<css> asset types).
+
+=head2 minify
+
+Whether or not to attempt to minify content for C<css> or C<js> asset types. This is a purely optional
+convenience feature.
+
+Defaults to false (0). Does not apply to the C<directory> asset type.
+
+=head2 minifier
+
+CodeRef used to minify the content when C<minify> is true. The default code is a pass-through to 
+C<CSS::Minifier::minify()> for C<css> assets and C<JavaScript::Minifier::minify()> for C<js>. If
+you want to override you must follow the same API as in those modules, using the C<input> and 
+C<outfile> filehandle interface. See L<JavaScript::Minifier> and L<CSS::Minifier> for more details.
+
+Does not apply to the C<directory> asset type.
+
+=head2 work_dir
+
+The directory where asset-specific files are generated and stored. This contains the checksum/fingerprint 
+file, the lock file, and the built file. In the case of C<directory> assets the built file contains a manifest
+of files and in the case of C<css> and C<js> assets it contains the actual asset content (concatenated and 
+possibly minified)
+
+Defaults to:
+
+  <APP_TMPDIR>/AutoAssets/<CONTROLLER_PATH>/
+
+=head2 max_lock_wait
+
+Number of seconds to wait to obtain an exclusive lock when recalculating/regenerating. For thread-safety, when the system
+needs to regenerate the asset (fingerprint and built file) it obtains an exclusive lock on the lockfile in the 
+work_dir. If another thread/process already has a lock, the system will wait for up to C<max_lock_wait> seconds
+before giving up and throwing an exception.
+
+Note that this is only relevant when the source/include content changes while the app is running (which should never 
+happen in a production environment).
+
+Defaults to 120 seconds.
+
+=head2 max_fingerprint_calc_age
+
+Max number of seconds before recalculating the fingerprint of the content (sha1 checksum)
+regardless of whether or not the mtime has changed. 0 means infinite/disabled.
+
+For performance, once the system has calculated the checksum of the asset content it caches the mtime
+of the include file(s) and verifies on each request to see if they have changed. If they have, it 
+regenerates the asset on the fly (recalculates the checksum and concatenates and minifies (if enabled)
+for C<css> and C<js> asset types). If C<max_fingerprint_calc_age> is set to a non-zero value, it will force the
+system to regenerate at least every N seconds regardless of the mtime. This would only be needed in cases
+where you are worried the content could change without changing the mtime which shouldn't be needed in
+most cases.
+
+Defaults to 0.
+
+=head2 asset_content_type
+
+The content type returned in the 'Content-Type' header. Defaults to C<text/css> or C<text/javascript>
+for the C<css> and C<js> types respectively. 
+
+Does not apply to C<directory> asset type. For files within C<directory> type assets, the Content-Type 
+is set according to the file extension using L<MIME::Types>.
+
+=head2 cache_control_header
+
+The HTTP C<'Cache-Control'> header to return when serving assets. Defaults to the maximum 
+aggressive value that should be honored by most browsers (1 year):
+
+  public, max-age=31536000, s-max-age=31536000
+
+=back
+
+=head1 METHODS
+
+=head2 is_dir
+
+Returns true (1) if the asset type is C<directory> and false (0) if the type is C<css> or C<js>.
+
+=head2 asset_path
+
+Returns the current, public URL path to the asset:
+
+  <CONTROLLER_PATH>/<SHA1>       # for 'directory' type
+  <CONTROLLER_PATH>/<SHA1>.js    # for 'js' type
+  <CONTROLLER_PATH>/<SHA1>.css   # for 'css' type
+
+For C<directory> asset types, accepts an optional subpath argument to a specific file. For example,
+if there was a file C<images/logo.gif> within the include directory, $c->controller('Foo::MyAsset')->asset_path('images/logo.gif')
+might return:
+
+  /foo/myasset/1512834162611d99fab246dfa87345a37f68ed95f/images/logo.gif
+
+=head1 SEE ALSO
+
+=over
+
+=item L<Catalyst::Plugin::Assets>
+
+=item L<Catalyst::Controller::VersionedURI>
+
+=item L<Plack::Middleware::Assets>
+
+=item L<Plack::Middleware::JSConcat>
+
+=back
+
+=head1 TODO
+
+This module was converted from an existing, internal application to be published on CPAN. 
+Test cases still need to be pulled in.
+
+
+=head1 BUGS
+
+Should work under other platforms besides Linux, but this hasn't been tested (only issue would be the 
+File Locking code)
+
+=head1 AUTHOR
+
+Henry Van Styn <vanstyn@cpan.org>
+
+=head1 COPYRIGHT AND LICENSE
+
+This software is copyright (c) 2013 by IntelliTree Solutions llc.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
+
+=cut
