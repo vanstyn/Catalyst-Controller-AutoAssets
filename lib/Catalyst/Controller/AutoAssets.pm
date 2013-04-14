@@ -347,7 +347,9 @@ sub prepare_asset {
   if($self->is_dir) {
     # The built file is just a placeholder in the case of 'directory' type 
     # asset whose data is served from the original files
-    $fd->write(join("\r\n",@$files) . "\r\n");
+    my ($root) = $self->includes;
+    my @relative = map { file($_)->relative($root) } @$files;
+    $fd->write(join("\r\n",@relative) . "\r\n");
   }
   else {
     if($self->minify && $self->minifier) {
