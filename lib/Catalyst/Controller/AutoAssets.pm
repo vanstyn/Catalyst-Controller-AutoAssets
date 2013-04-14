@@ -375,7 +375,7 @@ sub prepare_asset {
       }
     }
     else {
-      $fd->write($_) for ( map { io($_)->slurp . "\r\n" } @$files );
+      $fd->write($_) for ( map { file($_)->slurp . "\r\n" } @$files );
     }
   }
   $fd->close;
