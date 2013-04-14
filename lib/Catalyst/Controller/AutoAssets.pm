@@ -10,14 +10,12 @@ use namespace::autoclean;
 
 BEGIN { extends 'Catalyst::Controller' }
 
+use Path::Class 0.32 qw( dir file );
 use Fcntl qw( :DEFAULT :flock :seek F_GETFL );
-use Digest::SHA1;
-use Path::Class qw( dir file );
-use File::Spec;
 use File::stat qw(stat);
 use Catalyst::Utils;
-use IO::File;
-use IO::All;
+use Digest::SHA1;
+
 require MIME::Types;
 require Module::Runtime;
 
@@ -173,17 +171,17 @@ has 'work_dir', is => 'ro', lazy => 1, default => sub {
 has 'built_file', is => 'ro', lazy => 1, default => sub {
   my $self = shift;
   my $filename = 'built.' . $self->type;
-  return File::Spec->catfile($self->work_dir,$filename);
+  return file($self->work_dir,$filename);
 };
 
 has 'fingerprint_file', is => 'ro', lazy => 1, default => sub {
   my $self = shift;
-  return File::Spec->catfile($self->work_dir,'fingerprint');
+  return file($self->work_dir,'fingerprint');
 };
 
 has 'lock_file', is => 'ro', lazy => 1, default => sub {
   my $self = shift;
-  return File::Spec->catfile($self->work_dir,'lockfile');
+  return file($self->work_dir,'lockfile');
 };
 
 has 'MimeTypes', is => 'ro', lazy => 1, default => sub {
@@ -279,14 +277,14 @@ sub calculate_fingerprint {
 sub current_fingerprint {
   my $self = shift;
   return undef unless (-f $self->fingerprint_file);
-  my $fingerprint = io($self->fingerprint_file)->slurp;
+  my $fingerprint = file($self->fingerprint_file)->slurp;
   return $fingerprint;
 }
 
 sub save_fingerprint {
   my $self = shift;
   my $fingerprint = shift or die "Expected fingerprint/checksum argument";
-  return io($self->fingerprint_file)->print($fingerprint);
+  return file($self->fingerprint_file)->spew($fingerprint);
 }
 
 sub calculate_save_fingerprint {
@@ -344,7 +342,7 @@ sub prepare_asset {
   
   # Need to do a rebuild:
   
-  my $fd = IO::File->new($self->built_file, '>:raw') or die $!;
+  my $fd = file($self->built_file)->openw or die $!;
   if($self->is_dir) {
     # The built file is just a placeholder in the case of 'directory' type 
     # asset whose data is served from the original files
@@ -384,11 +382,9 @@ sub file_checksum {
   
   my $Sha1 = Digest::SHA1->new;
   foreach my $file (@files) {
-    my $FH = IO::File->new();
-    $FH->open('< ' . $file) or die "$! : $file\n";
-    $FH->binmode;
-    $Sha1->addfile($FH);
-    $FH->close;
+    my $fh = file($file)->openr or die "$! : $file\n";
+    $Sha1->addfile($fh);
+    $fh->close;
   }
   
   return $Sha1->hexdigest;
@@ -433,9 +429,7 @@ sub asset_fh {
   my $file = $self->built_file;
   return undef unless (-f $file);
   
-  my $fh = IO::File->new();
-  $fh->open('< ' . $file) or die "Failed to open $file for reading.";
-  
+  my $fh = file($file)->openr or die "$! : $file\n";
   return $fh;
 }
 
