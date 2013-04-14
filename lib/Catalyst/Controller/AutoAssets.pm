@@ -31,7 +31,7 @@ has 'type', is => 'ro', isa => 'Str', required => 1;
 has 'minify', is => 'ro', isa => 'Bool', default => sub{0};
 
 # Whether or not to make the current asset available via 307 redirect to the
-# real checksum path
+# real, current checksum/fingerprint asset path
 has 'current_redirect', is => 'ro', isa => 'Bool', default => sub{1};
 
 # Max number of seconds before recalculating the fingerprint (sha1 checksum)
@@ -41,6 +41,9 @@ has 'max_fingerprint_calc_age', is => 'ro', isa => 'Int',
 
 # Max number of seconds to wait to obtain a lock (to be thread safe)
 has 'max_lock_wait', is => 'ro', isa => 'Int', default => 120;
+
+has 'cache_control_header', is => 'ro', isa => 'Str', 
+  default => sub { 'public, max-age=31536000, s-max-age=31536000' }; # 31536000 = 1 year
 
 ######################################
 
@@ -90,9 +93,7 @@ sub index :Path {
     ($arg eq 'current' || $arg eq 'current.' . $self->type)
   );
   
-  return $self->is_dir ?
-    $c->detach('dir_request') :
-    $c->detach('file_request');
+  return $self->is_dir ? $c->detach('dir_request') : $c->detach('file_request');
 }
 
 sub cur_request :Private {
@@ -114,7 +115,7 @@ sub file_request :Private {
   # Let browsers cache forever because we're a CAS path! content will always be current
   $c->response->header(
     'Content-Type' => $self->asset_content_type,
-    'Cache-Control' => 'public, max-age=31536000, s-max-age=31536000' # 31536000 = 1 year
+    'Cache-Control' => $self->cache_control_header
   ); 
   
   return $c->response->body( $self->asset_fh );
@@ -132,7 +133,7 @@ sub dir_request :Private {
   
   $c->response->header(
     'Content-Type' => $self->_ext_to_type($File),
-    'Cache-Control' => 'public, max-age=31536000, s-max-age=31536000' # 31536000 = 1 year
+    'Cache-Control' => $self->cache_control_header
   );
   
   return $c->response->body( $File->openr );
@@ -346,7 +347,7 @@ sub prepare_asset {
   if($self->is_dir) {
     # The built file is just a placeholder in the case of 'directory' type 
     # asset whose data is served from the original files
-    $fd->write(join("\r\n",$inc_mtimes,@$files) . "\r\n");
+    $fd->write(join("\r\n",@$files) . "\r\n");
   }
   else {
     if($self->minify && $self->minifier) {
