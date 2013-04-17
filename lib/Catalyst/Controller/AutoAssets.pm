@@ -80,6 +80,9 @@ sub BUILD {
       if($self->minify && ! $self->minifier);
   }
   
+  my $work_dir = dir($self->work_dir);
+  $work_dir->mkpath($self->_app->debug) unless (-d $work_dir);
+  
   $self->prepare_asset;
 }
 
@@ -169,7 +172,7 @@ has 'asset_content_type', is => 'ro', isa => 'Str', lazy => 1, default => sub {
   else {
     return undef;
   }
-}
+};
 
 has 'work_dir', is => 'ro', lazy => 1, default => sub {
   my $self = shift;
@@ -179,7 +182,6 @@ has 'work_dir', is => 'ro', lazy => 1, default => sub {
     || Catalyst::Exception->throw("Can't determine tempdir for $c");
     
   my $dir = dir($tmpdir, "AutoAssets",  $self->action_namespace($c));
-  $dir->mkpath($c->debug) unless (-d $dir);
   return $dir->resolve;
 };
 
@@ -258,7 +260,7 @@ sub get_include_files {
       });
     }
     else {
-      Catalyst::Exception->throw("AutoAsset include path '$inc' not found");
+      die "AutoAsset include path '$inc' not found";
     }
   }
     
