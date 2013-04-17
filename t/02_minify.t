@@ -17,8 +17,8 @@ my $work_dir = "$Bin/var/tmp/work_dir";
   __PACKAGE__->config(
     name => __PACKAGE__,
     'Controller::Assets' => {
-      include => [ "$FindBin::Bin/var/eg_src/stylesheets" ],
-      type => 'css',
+      include => [ "$FindBin::Bin/var/eg_src/js" ],
+      type => 'js',
       minify => 1,
       work_dir => $work_dir
     },
@@ -31,6 +31,16 @@ my $work_dir = "$Bin/var/tmp/work_dir";
 use Test::More;
 use Catalyst::Test 'TestApp';
 
-pass 'TODO';
+action_redirect(
+  '/assets/current.js',
+  "Current redirect"
+);
+
+contenttype_is(
+  TestApp->controller('Assets')->asset_path,
+  'text/javascript',
+  "Expected JavaScript Content-Type"
+);
+
 
 done_testing;
