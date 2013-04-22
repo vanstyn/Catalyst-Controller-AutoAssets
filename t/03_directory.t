@@ -32,7 +32,7 @@ use Catalyst::Test 'TestApp';
 
 is(
   TestApp->controller('Assets')->asset_path,
-  "/assets/20e593628f20c3ad7167b75e7b89f69148ea14f2",
+  "/assets/71d2c53e7e79f9581042130e268a50e4a14a5b77",
   "Expected directory SHA1 asset path"
 );
 

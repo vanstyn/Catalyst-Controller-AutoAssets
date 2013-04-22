@@ -254,16 +254,23 @@ sub get_include_files {
       push @files, $inc;
     }
     elsif(-d $inc) {
-      dir($inc)->recurse( callback => sub {
-        my $child = shift;
-        push @files, $child->absolute unless ($child->is_dir);
-      });
+      dir($inc)->recurse(
+        preorder => 1,
+        depthfirst => 1,
+        callback => sub {
+          my $child = shift;
+          push @files, $child->absolute unless ($child->is_dir);
+        }
+      );
     }
     else {
       die "AutoAsset include path '$inc' not found";
     }
   }
-    
+  
+  # force consistent ordering of files:
+  @files = sort @files;
+   
   return \@files;
 }
 
