@@ -729,17 +729,6 @@ might return:
 
 =back
 
-=head1 TODO
-
-This module was converted from an existing, internal application to be published on CPAN. 
-Test cases still need to be pulled in.
-
-
-=head1 BUGS
-
-Should work under other platforms besides Linux, but this hasn't been tested (only issue would be the 
-File Locking code)
-
 =head1 AUTHOR
 
 Henry Van Styn <vanstyn@cpan.org>

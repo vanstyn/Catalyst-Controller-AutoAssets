@@ -229,17 +229,6 @@ might return:
 - [Plack::Middleware::Assets](http://search.cpan.org/perldoc?Plack::Middleware::Assets)
 - [Plack::Middleware::JSConcat](http://search.cpan.org/perldoc?Plack::Middleware::JSConcat)
 
-# TODO
-
-This module was converted from an existing, internal application to be published on CPAN. 
-Test cases still need to be pulled in.
-
-
-
-# BUGS
-
-Should work under other platforms besides Linux, but this hasn't been tested (only issue would be the 
-File Locking code)
 
 # AUTHOR
 
