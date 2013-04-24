@@ -2,7 +2,7 @@ package Catalyst::Controller::AutoAssets;
 use strict;
 use warnings;
 
-our $VERSION = 0.10;
+our $VERSION = 0.11;
 
 use Moose;
 use namespace::autoclean;
@@ -53,9 +53,10 @@ sub BUILD {
   my $self = shift;
   
   my $type = $self->type;
+  my %valid = map {$_=>1} @valid_types; # perl 5.8 doesn't like ~~ operator
   Catalyst::Exception->throw(
     "Invalid type '$type' = must be one of: " . join(', ', @valid_types)
-  ) unless ($type ~~ @valid_types); # Would much rather be doing this with an 'Enum' type constraint
+  ) unless ($valid{$type}); # TODO: setup a real type constraint
   
   Catalyst::Exception->throw("Must include at least one file/directory")
     unless ($self->include_count > 0);
@@ -508,7 +509,7 @@ Catalyst::Controller::AutoAssets - Automatic asset serving via sha1-based URLs
 
 =head1 VERSION
 
-version 0.10
+version 0.11
 
 =head1 SYNOPSIS
 
