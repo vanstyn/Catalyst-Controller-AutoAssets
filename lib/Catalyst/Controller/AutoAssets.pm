@@ -700,8 +700,6 @@ aggressive value that should be honored by most browsers (1 year):
 
   public, max-age=31536000, s-max-age=31536000
 
-=back
-
 =head1 METHODS
 
 =head2 is_dir
