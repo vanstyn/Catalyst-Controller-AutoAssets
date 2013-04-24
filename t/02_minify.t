@@ -5,15 +5,19 @@ use warnings;
 use FindBin '$Bin';
 use lib "$Bin/lib";
 
+use Test::More;
+eval "use JavaScript::Minifier";
+plan skip_all => "JavaScript::Minifier required for testing minify" if $@;
+
 my $work_dir = "$Bin/var/tmp/work_dir";
 
 {
   package TestApp;
   use Moose;
-  
+
   use Catalyst;
   extends 'Catalyst';
-  
+
   __PACKAGE__->config(
     name => __PACKAGE__,
     'Controller::Assets' => {
@@ -24,11 +28,10 @@ my $work_dir = "$Bin/var/tmp/work_dir";
     },
   );
 
-  __PACKAGE__->setup();  
+  __PACKAGE__->setup();
   1;
 }
 
-use Test::More;
 use Catalyst::Test 'TestApp';
 
 action_redirect(
@@ -41,6 +44,5 @@ contenttype_is(
   'text/javascript',
   "Expected JavaScript Content-Type"
 );
-
 
 done_testing;
