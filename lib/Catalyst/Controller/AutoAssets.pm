@@ -81,8 +81,8 @@ sub BUILD {
       if($self->minify && ! $self->minifier);
   }
   
-  my $work_dir = dir($self->work_dir);
-  $work_dir->mkpath($self->_app->debug) unless (-d $work_dir);
+  # init work_dir:
+  $self->work_dir;
   
   $self->prepare_asset;
 }
@@ -183,6 +183,7 @@ has 'work_dir', is => 'ro', lazy => 1, default => sub {
     || Catalyst::Exception->throw("Can't determine tempdir for $c");
     
   my $dir = dir($tmpdir, "AutoAssets",  $self->action_namespace($c));
+  $dir->mkpath($self->_app->debug);
   return $dir->resolve;
 };
 
