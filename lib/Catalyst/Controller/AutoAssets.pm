@@ -13,6 +13,7 @@ use Path::Class 0.32 qw( dir file );
 use Fcntl qw( :DEFAULT :flock :seek F_GETFL );
 use File::stat qw(stat);
 use Catalyst::Utils;
+use Time::HiRes qw(gettimeofday tv_interval);
 
 require Digest::SHA1;
 require MIME::Types;
@@ -329,6 +330,7 @@ sub fingerprint_calc_current {
 
 sub prepare_asset {
   my $self = shift;
+  my $start = [gettimeofday];
   
   file($self->built_file)->touch unless (-e $self->built_file);
   
@@ -396,7 +398,9 @@ sub prepare_asset {
   $self->built_mtime($self->get_built_mtime);
   $self->calculate_save_fingerprint;
   
-  $self->_app->log->info("Built asset: " . $self->asset_path);
+  my $elapsed = tv_interval($start); 
+  $self->_app->log->info("Built asset: " . $self->asset_path .
+   ' in ' . sprintf("%.3f", $elapsed ) . 's');
   
   # Release the lock and return:
   return $self->release_build_lock;
