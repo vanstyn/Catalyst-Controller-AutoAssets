@@ -297,7 +297,7 @@ sub get_built_mtime {
 }
 
 # inc_mtimes are the mtime(s) of the include files. For directory assets
-# this is *only* the mtime of the top directory (see subfile_mtimes below)
+# this is *only* the mtime of the top directory (see subfile_meta below)
 has 'inc_mtimes', is => 'rw', isa => 'Maybe[Str]', default => undef;
 sub get_inc_mtime_concat {
   my $self = shift;
@@ -305,17 +305,17 @@ sub get_inc_mtime_concat {
   return join('-', map { stat($_)->mtime } @$list );
 }
 
-# subfile_mtimes applies only to 'directory' assets. It is a cache of mtimes of
+# subfile_meta applies only to 'directory' assets. It is a cache of mtimes of
 # individual files within the directory since 'inc_mtimes' only conatins the top
 # directory. This is used to check for mtime changes on individual subfiles when
 # they are requested. This is for performance since it would be too expensive to
 # attempt to check all the mtimes on every request
-has 'subfile_mtimes', is => 'rw', isa => 'HashRef', default => sub {{}};
-sub set_subfile_mtimes {
+has 'subfile_meta', is => 'rw', isa => 'HashRef', default => sub {{}};
+sub set_subfile_meta {
   my $self = shift;
   my $list = shift;
-  return $self->subfile_mtimes({
-    map { $_ => stat($_)->mtime } @$list
+  return $self->subfile_meta({
+    map { $_ => { mtime => stat($_)->mtime } } @$list
   });
 }
 
@@ -366,7 +366,7 @@ has '_persist_attrs', is => 'ro', isa => 'ArrayRef', default => sub{[qw(
  built_mtime
  inc_mtimes
  last_fingerprint_calculated
- subfile_mtimes
+ subfile_meta
 )]};
 
 sub _persist_state {
@@ -415,8 +415,8 @@ sub _subfile_mtime_verify {
   # changes within files would not otherwise be caught since file
   # content changes do not update the parent directory mtime
   $self->clear_asset unless (
-    exists $self->subfile_mtimes->{$File} &&
-    $File->stat->mtime eq $self->subfile_mtimes->{$File}
+    exists $self->subfile_meta->{$File} &&
+    $File->stat->mtime eq $self->subfile_meta->{$File}->{mtime}
   );
 }
 
@@ -470,7 +470,7 @@ sub prepare_asset {
     # Get the real list of files that we put off above for 'directory' assets
     $files = $self->get_include_files;
     # update the mtime cache of all directory subfiles
-    $self->set_subfile_mtimes($files);
+    $self->set_subfile_meta($files);
   }
 
   # Check the fingerprint to see if we can avoid a full rebuild (if mtimes changed
@@ -558,9 +558,31 @@ sub asset_name {
   return  . '.' . $self->type;
 }
 
+# Provides a mechanism for preparing a set of subfiles all at once. This
+# is a critical pre-step whenever multiple subfiles are being used together
+# because if any have changed the asset path for *all* will be updated as
+# soon as the changed file is detected. If this happens halfway through the list,
+# the asset path of earlier processed items will retroactively change.
+sub prepare_asset_subfiles {
+  my ($self, @files) = @_;
+
+  die "prepare_asset_subfiles() only applies to 'directory' assets"
+    unless ($self->is_dir);
+
+  for my $path (@files) {
+    my $File = $self->_get_sub_file($path)->absolute;
+    die "Bad asset subfile path '$path'" unless (-f $File);
+    $self->prepare_asset($File);
+  }
+}
+
+# this global is just used for some internal optimization to avoid calling stat
+# duplicate times. It is basically me being lazy, adding an internal extra param
+# to asset_path() without changing its public API/arg list
+our $_ASSET_PATH_SKIP_PREPARE = 0;
 sub asset_path {
   my ($self, @subpath) = @_;
-  $self->prepare_asset(@subpath);
+  $self->prepare_asset(@subpath) unless ($_ASSET_PATH_SKIP_PREPARE);
   my $base = '/' . $self->action_namespace($self->_app) . '/' . $self->asset_name;
   return $base unless (scalar @subpath > 0);
   Catalyst::Exception->throw("Cannot use subpath with non directory asset")
@@ -572,6 +594,89 @@ sub asset_path {
 }
 
 
+# --------------------
+# get_html_head_tags()
+#
+#    applies only to 'directory' asset types
+#
+# Convenience method to generate a set of CSS <link> and JS <script> tags
+# suitable to drop into the <head> section of an HTML document. Expects
+# a hash(ref) with 'css' and/or 'js' keys and arrayref values (subfile paths).
+#
+# This could be considered a violation of separation of concerns, but the main
+# reason this method is provided at all, besides the fact that it is a common
+# use case, is that it handles the preprocessing required to ensure the dir asset
+# is in an atomic/consistent state by calling prepare_asset_subfiles() on all
+# supplied subfiles as a group to catch any content changes before rendering/returning
+# the active asset paths. This is something that users might not realize they
+# need to do if they don't read the docs closely. So, it is a common use case
+# and this provides a simple and easy to understand interface that spares the user
+# from needing to know about details they might not want to know about. It's
+# practical/useful, self-documenting, and doesn't have to be used...
+#
+# The only actual "risk" if this the preprocessing step is missed, and the user builds
+# head tags themselves with multiple calls to asset_path('path/to/subfile') [such as in
+# a TT file] is that during a request where the content of one of the subfiles has changed,
+# the asset paths of all the subfiles processed/returned prior to hitting the changed file
+# will already be invalid (retroactively) because the sha1 will have changed. This is
+# because the sha1/fingerprint is based on the asset as *whole*, and for performance, subfile
+# content changes are not detected until they are accessed. This is only an issue when the
+# content changes *in-place*, which shouldn't ever happen in a production environment. And,
+# it only effects the first request immediately after the change. This issue can also be avoided
+# altogether by using static 'current' alias redirect URLs instead off calling asset_path(),
+# but this is *slightly* less efficient, as discussed in the documentation.
+#
+# This long-winded explanation is more about documenting/explaining the internal design
+# for development purposes (and to be a reminder for me) than it is anything else. Also,
+# it is intentionally in a comment rather than the POD for the sake of avoiding information
+# overload since from the user perspective this is barely an issue (but very useful for
+# developers who need to understand the internals of this module)
+#
+#  Note: This has *nothing* to do with 'css' or 'js' asset types which are always atomic
+#  (because they are single files and have no "subfiles"). This **only** applies to
+#  the 'directory' asset type
+#
+sub get_html_head_tags {
+  my $self = shift;
+  my %cnf = (ref($_[0]) eq 'HASH') ? %{ $_[0] } : @_; # <-- arg as hash or hashref
+
+  die "get_html_head_tags() only applies to 'directory' assets"
+    unless ($self->is_dir);
+
+  die 'get_html_head_tags(): Expected \%cnf arg with "js" and/or "css" keys'
+    unless (ref($cnf{js}) eq 'ARRAY' or ref($cnf{css}) eq 'ARRAY');
+
+  # note that we're totally trusting the caller to know that these files are
+  # in fact js/css files. We're just generating the correct tags for each type
+  my @css = $cnf{css} ? @{$cnf{css}} : ();
+  my @js = $cnf{js} ? @{$cnf{js}} : ();
+
+  # This is the line that ensures any content changes are detected before we start
+  # building the tags/urls:
+  $self->prepare_asset_subfiles(@css,@js);
+
+  # This spares repeating the stat/mtime calls by asset_path() below.
+  # Maybe overkill, but every little bit of performance helps (and I'm OCD)...
+  local $_ASSET_PATH_SKIP_PREPARE = 1;
+
+  my @tags = ();
+  push @tags, '<link rel="stylesheet" type="text/css" href="' .
+    $self->asset_path($_) . '" />' for (@css);
+
+  push @tags, '<script type="text/javascript" src="' .
+    $self->asset_path($_) . '"></script>' for (@js);
+
+  my $html =
+		"\r\n\r\n<!--   AUTO GENERATED BY " . ref($self) . " (/" .
+    $self->action_namespace($self->_app) . ")   -->\r\n" .
+		( scalar @tags > 0 ?
+			join("\r\n",@tags) : '<!--      NO ASSETS AVAILABLE      -->'
+		) .
+		"\r\n<!--  ---- END AUTO GENERATED ASSETS ----  -->\r\n\r\n";
+
+  return $html;
+}
+# --------------------
 
 
 sub asset_fh {
