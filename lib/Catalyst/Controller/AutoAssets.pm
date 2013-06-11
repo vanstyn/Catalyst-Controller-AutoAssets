@@ -14,6 +14,7 @@ use Fcntl qw( :DEFAULT :flock :seek F_GETFL );
 use File::stat qw(stat);
 use Catalyst::Utils;
 use Time::HiRes qw(gettimeofday tv_interval);
+use Storable qw(store retrieve);
 
 require Digest::SHA1;
 require MIME::Types;
@@ -46,6 +47,10 @@ has 'max_lock_wait', is => 'ro', isa => 'Int', default => 120;
 
 has 'cache_control_header', is => 'ro', isa => 'Str', 
   default => sub { 'public, max-age=31536000, s-max-age=31536000' }; # 31536000 = 1 year
+
+# Whether or not to use stored state data across restarts to avoid rebuilding.
+has 'persist_state', is => 'ro', isa => 'Bool', default => sub{0};
+
 
 ######################################
 
@@ -85,6 +90,9 @@ sub BUILD {
   # init work_dir:
   $self->work_dir;
   
+  # optionally initialize state data from the copy stored on disk:
+  $self->_restore_state if($self->persist_state);
+
   $self->prepare_asset;
 }
 
@@ -328,6 +336,36 @@ sub fingerprint_calc_current {
   return 0;
 }
 
+# -----
+# Quick and dirty state persistence for faster startup
+has 'persist_state_file', is => 'ro', lazy => 1, default => sub {
+  my $self = shift;
+  return file($self->work_dir,'state.dat');
+};
+
+has '_persist_attrs', is => 'ro', isa => 'ArrayRef', default => sub{[qw(
+ built_mtime
+ inc_mtimes
+ last_fingerprint_calculated
+)]};
+
+sub _persist_state {
+  my $self = shift;
+  return undef unless ($self->persist_state);
+  my $data = { map { $_ => $self->$_ } @{$self->_persist_attrs} };
+  store $data, $self->persist_state_file;
+  return $data;
+}
+
+sub _restore_state {
+  my $self = shift;
+  return 0 unless (-f $self->persist_state_file);
+  my $data = retrieve $self->persist_state_file;
+  $self->$_($data->{$_}) for (@{$self->_persist_attrs});
+  return $data;
+}
+# -----
+
 sub prepare_asset {
   my $self = shift;
   my $start = [gettimeofday];
@@ -336,6 +374,8 @@ sub prepare_asset {
   
   # For 'directory' only consider the mtime of the top directory and don't
   # read in all the files yet
+  #  WARNING: this means that changes *within* sub files will not be detected because
+  #  this does not update the directory mtime; only filename changes will be seen
   my $files = $self->is_dir ? [ $self->includes ] : $self->get_include_files;
   my $inc_mtimes = $self->get_inc_mtime_concat($files);
   my $built_mtime = $self->get_built_mtime;
@@ -365,6 +405,7 @@ sub prepare_asset {
     # for the lock and on the very first time after the application starts up
     $self->inc_mtimes($inc_mtimes);
     $self->built_mtime($built_mtime);
+    $self->_persist_state;
     return $self->release_build_lock;
   }
   
@@ -398,11 +439,13 @@ sub prepare_asset {
   $self->built_mtime($self->get_built_mtime);
   $self->calculate_save_fingerprint;
   
-  my $elapsed = tv_interval($start); 
-  $self->_app->log->info("Built asset: " . $self->asset_path .
-   ' in ' . sprintf("%.3f", $elapsed ) . 's');
+  $self->_app->log->info(
+    "Built asset: " . $self->asset_path .
+    ' in ' . sprintf("%.3f", tv_interval($start) ) . 's'
+   );
   
   # Release the lock and return:
+  $self->_persist_state;
   return $self->release_build_lock;
 }
 
@@ -691,6 +734,21 @@ most cases.
 
 Defaults to 0.
 
+=head2 persist_state
+
+Whether or not to persist and use state data (fingerprints and mtimes) across restarts to avoid rebuilding which may
+be expensive and unnecessary. The asset fingerprint is normally always recalculated at startup, but if this option
+is enabled it is loaded from a cache/state file maintained on disk. This is useful for assets that take a long time
+to build (such as big include libs) and is fine as long as you trust the state data stored on disk.
+
+WARNING: Use this feature with caution for 'directory' type assets since the mtime check does not catch file content changes
+alone (only filename changes), and when this is enabled it may not catch changes even across app restarts which may
+not be expected.
+
+No effect if max_fingerprint_calc_age is set.
+
+Defaults to false (0).
+
 =head2 asset_content_type
 
 The content type returned in the 'Content-Type' header. Defaults to C<text/css> or C<text/javascript>
@@ -705,6 +763,7 @@ The HTTP C<'Cache-Control'> header to return when serving assets. Defaults to th
 aggressive value that should be honored by most browsers (1 year):
 
   public, max-age=31536000, s-max-age=31536000
+
 
 =head1 METHODS
 
@@ -725,6 +784,11 @@ if there was a file C<images/logo.gif> within the include directory, $c->control
 might return:
 
   /foo/myasset/1512834162611d99fab246dfa87345a37f68ed95f/images/logo.gif
+
+=head1 BUGS
+
+Does not currently work on all Windows platforms because of the file locking code.
+This will be refactored/generalized in a later version.
 
 =head1 SEE ALSO
 
