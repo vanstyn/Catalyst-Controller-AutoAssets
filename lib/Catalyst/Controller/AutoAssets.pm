@@ -15,6 +15,7 @@ use File::stat qw(stat);
 use Catalyst::Utils;
 use Time::HiRes qw(gettimeofday tv_interval);
 use Storable qw(store retrieve);
+use Try::Tiny;
 
 require Digest::SHA1;
 require MIME::Types;
@@ -107,8 +108,6 @@ sub BUILD {
 sub index :Path {
   my ( $self, $c, $arg ) = @_;
   
-  $self->prepare_asset;
-  
   return $c->detach('cur_request') if (
     $self->current_redirect &&
     ($arg eq $self->current_alias || $arg eq $self->current_alias . '.' . $self->type)
@@ -120,6 +119,8 @@ sub index :Path {
 sub cur_request :Private {
   my ( $self, $c, $arg, @args ) = @_;
   
+  $self->prepare_asset(@args);
+
   $c->response->header( 'Cache-Control' => 'no-cache' );
   $c->response->redirect(join('/',$self->asset_path,@args), 307);
   return $c->detach;
@@ -127,11 +128,11 @@ sub cur_request :Private {
 
 sub file_request :Private {
   my ( $self, $c, @args ) = @_;
-  
   my $want_asset = join('/',@args);
 
-  my $asset = $self->asset_name;
-  return $self->unknown_asset($c,$want_asset) unless ($asset eq $want_asset);
+  $self->prepare_asset;
+
+  return $self->unknown_asset($c,$want_asset) unless ($self->asset_name eq $want_asset);
   
   # Let browsers cache forever because we're a CAS path! content will always be current
   $c->response->header(
@@ -146,17 +147,18 @@ sub dir_request :Private {
   my ( $self, $c, $sha1, @args ) = @_;
   
   my $want_asset = join('/',$sha1,@args);
-  
-  return $self->unknown_asset($c,$want_asset) unless ($sha1 eq $self->asset_name);
-  
   my $File = $self->_get_sub_file(@args);
   return $self->unknown_asset($c,$want_asset) unless (-f $File);
   
+  $self->prepare_asset($File);
+
+  return $self->unknown_asset($c,$want_asset) unless ($sha1 eq $self->asset_name);
+
   $c->response->header(
     'Content-Type' => $self->_ext_to_type($File),
     'Cache-Control' => $self->cache_control_header
   );
-  
+
   return $c->response->body( $File->openr );
 }
 ############################
@@ -245,12 +247,6 @@ sub _ext_to_type {
   }
 }
 
-# for directory type only:
-sub _get_sub_file {
-  my $self = shift;
-  my ($root) = $self->includes;
-  return file($root,@_);
-}
 
 sub includes {
   my $self = shift;
@@ -300,11 +296,27 @@ sub get_built_mtime {
   return -f $self->built_file ? stat($self->built_file)->mtime : undef;
 }
 
+# inc_mtimes are the mtime(s) of the include files. For directory assets
+# this is *only* the mtime of the top directory (see subfile_mtimes below)
 has 'inc_mtimes', is => 'rw', isa => 'Maybe[Str]', default => undef;
 sub get_inc_mtime_concat {
   my $self = shift;
   my $list = shift;
   return join('-', map { stat($_)->mtime } @$list );
+}
+
+# subfile_mtimes applies only to 'directory' assets. It is a cache of mtimes of
+# individual files within the directory since 'inc_mtimes' only conatins the top
+# directory. This is used to check for mtime changes on individual subfiles when
+# they are requested. This is for performance since it would be too expensive to
+# attempt to check all the mtimes on every request
+has 'subfile_mtimes', is => 'rw', isa => 'HashRef', default => sub {{}};
+sub set_subfile_mtimes {
+  my $self = shift;
+  my $list = shift;
+  return $self->subfile_mtimes({
+    map { $_ => stat($_)->mtime } @$list
+  });
 }
 
 sub calculate_fingerprint {
@@ -331,7 +343,7 @@ sub save_fingerprint {
 
 sub calculate_save_fingerprint {
   my $self = shift;
-  my $fingerprint = $self->calculate_fingerprint or return 0;
+  my $fingerprint = $self->calculate_fingerprint(@_) or return 0;
   return $self->save_fingerprint($fingerprint);
 }
 
@@ -354,6 +366,7 @@ has '_persist_attrs', is => 'ro', isa => 'ArrayRef', default => sub{[qw(
  built_mtime
  inc_mtimes
  last_fingerprint_calculated
+ subfile_mtimes
 )]};
 
 sub _persist_state {
@@ -367,43 +380,101 @@ sub _persist_state {
 sub _restore_state {
   my $self = shift;
   return 0 unless (-f $self->persist_state_file);
-  my $data = retrieve $self->persist_state_file;
-  $self->$_($data->{$_}) for (@{$self->_persist_attrs});
+  my $data;
+  try {
+    $data = retrieve $self->persist_state_file;
+    $self->$_($data->{$_}) for (@{$self->_persist_attrs});
+  }
+  catch {
+    $self->clear_asset; #<-- make sure no partial state data is used
+    $self->_app->log->warn(
+      'Failed to restore state from ' . $self->persist_state_file
+    );
+  };
   return $data;
 }
 # -----
 
-sub prepare_asset {
+
+# for directory type only:
+sub _get_sub_file {
   my $self = shift;
+  # if its already a File object, return as is
+  return $_[0] if (ref $_[0] eq 'Path::Class::File');
+  my ($root) = $self->includes;
+  return file($root,@_);
+}
+
+sub _subfile_mtime_verify {
+  my $self = shift;
+  my $File = $self->_get_sub_file(@_)->absolute;
+
+  # Check the mtime of the requested file to see if it has changed
+  # and force a rebuild if it has. This is done because it is too
+  # expensive to check all the subfile mtimes on every request, and
+  # changes within files would not otherwise be caught since file
+  # content changes do not update the parent directory mtime
+  $self->clear_asset unless (
+    exists $self->subfile_mtimes->{$File} &&
+    $File->stat->mtime eq $self->subfile_mtimes->{$File}
+  );
+}
+
+
+sub prepare_asset {
+  my ($self, @subpath) = @_;
   my $start = [gettimeofday];
-  
+
   file($self->built_file)->touch unless (-e $self->built_file);
-  
+
+  # Special code path: if this is associated with a sub file request
+  # in a 'directory' type asset, clear the asset to force a rebuild
+  # below if the *subfile* mtime has changed
+  $self->_subfile_mtime_verify(@subpath) if ($self->is_dir && scalar @subpath > 0);
+
   # For 'directory' only consider the mtime of the top directory and don't
-  # read in all the files yet
-  #  WARNING: this means that changes *within* sub files will not be detected because
-  #  this does not update the directory mtime; only filename changes will be seen
+  # read in all the files (yet... we will read them in only if we need to rebuild)
+  #  WARNING: this means that changes *within* sub files will not be detected here
+  #  because that doesn't update the directory mtime; only filename changes will be seen.
+  #  Update: That is what _subfile_mtime_verify above is for... to inexpensively catch
+  #  this case for individual sub files
   my $files = $self->is_dir ? [ $self->includes ] : $self->get_include_files;
   my $inc_mtimes = $self->get_inc_mtime_concat($files);
   my $built_mtime = $self->get_built_mtime;
-  
+
   # Check cached mtimes to see if anything has changed. This is a lighter
   # first pass check than the fingerprint check which calculates a sha1 for
   # all the source files and existing built files
-  return if (
+  return 1 if (
     $self->fingerprint_calc_current &&
     $self->inc_mtimes eq $inc_mtimes && 
     $self->built_mtime eq $built_mtime
   );
-  
-  # Get the real list of files that we put off above for 'directory' assets
-  $files = $self->get_include_files if ($self->is_dir);
-  
+
+  ####  -----
+  ####  The code above this line happens on every request and is designed
+  ####  to be as fast as possible
+  ####
+  ####  The code below this line is (comparatively) expensive and only
+  ####  happens when a rebuild is needed which should be rare--only when
+  ####  content is modified, or on app startup (unless 'persist_state' is set)
+  ####  -----
+
+  ### Do a rebuild:
+
   # --- Blocks for up to 2 minutes waiting to get an exclusive lock or dies
   $self->get_build_lock;
   # ---
-  
-  # Check the fingerprint:
+
+  if ($self->is_dir) {
+    # Get the real list of files that we put off above for 'directory' assets
+    $files = $self->get_include_files;
+    # update the mtime cache of all directory subfiles
+    $self->set_subfile_mtimes($files);
+  }
+
+  # Check the fingerprint to see if we can avoid a full rebuild (if mtimes changed
+  # but the actual content hasn't by comparing the fingerprint/checksum):
   my $fingerprint = $self->calculate_fingerprint($files);
   my $cur_fingerprint = $self->current_fingerprint;
   if($fingerprint && $cur_fingerprint && $cur_fingerprint eq $fingerprint) {
@@ -415,9 +486,9 @@ sub prepare_asset {
     $self->_persist_state;
     return $self->release_build_lock;
   }
-  
-  # Need to do a rebuild:
-  
+
+  ### Ok, we really need to do a full rebuild:
+
   my $fd = file($self->built_file)->openw or die $!;
   if($self->is_dir) {
     # The built file is just a placeholder in the case of 'directory' type 
@@ -440,30 +511,38 @@ sub prepare_asset {
     }
   }
   $fd->close;
-  
+
   # Update the fingerprint (global) and cached mtimes (specific to the current process)
   $self->inc_mtimes($inc_mtimes);
   $self->built_mtime($self->get_built_mtime);
-  $self->calculate_save_fingerprint;
-  
+  # we're calculating the fingerprint again because the built_file, which was just
+  # regenerated, is included in the checksum data. This could probably be optimized,
+  # however, this only happens on rebuild which rarely happens (should never happen)
+  # in production so an extra second is no big deal in this case.
+  $self->calculate_save_fingerprint($files);
+
   $self->_app->log->info(
     "Built asset: " . $self->asset_path .
     ' in ' . sprintf("%.3f", tv_interval($start) ) . 's'
    );
-  
+
   # Release the lock and return:
   $self->_persist_state;
   return $self->release_build_lock;
 }
 
-
+# force rebuild on next request
+sub clear_asset {
+  my $self = shift;
+  $self->inc_mtimes(undef);
+}
 
 sub file_checksum {
   my $self = shift;
-  my @files = @_;
+  my $files = ref $_[0] eq 'ARRAY' ? $_[0] : \@_;
   
   my $Sha1 = Digest::SHA1->new;
-  foreach my $file (@files) {
+  foreach my $file (@$files) {
     my $fh = file($file)->openr or die "$! : $file\n";
     $Sha1->addfile($fh);
     $fh->close;
@@ -481,6 +560,7 @@ sub asset_name {
 
 sub asset_path {
   my ($self, @subpath) = @_;
+  $self->prepare_asset(@subpath);
   my $base = '/' . $self->action_namespace($self->_app) . '/' . $self->asset_name;
   return $base unless (scalar @subpath > 0);
   Catalyst::Exception->throw("Cannot use subpath with non directory asset")
@@ -507,7 +587,8 @@ sub asset_fh {
 sub unknown_asset {
   my ($self,$c, $asset) = @_;
   $c->res->status(404);
-  return $c->res->body("No such asset '$asset'");
+  $c->res->header( 'Content-Type' => 'text/plain' );
+  return $c->res->body( "No such asset '$asset'" );
 }
 
 sub get_build_lock_wait {
