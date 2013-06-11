@@ -51,6 +51,8 @@ has 'cache_control_header', is => 'ro', isa => 'Str',
 # Whether or not to use stored state data across restarts to avoid rebuilding.
 has 'persist_state', is => 'ro', isa => 'Bool', default => sub{0};
 
+# Optional shorter checksum
+has 'sha1_string_length', is => 'ro', isa => 'Int', default => sub{40};
 
 ######################################
 
@@ -67,6 +69,11 @@ sub BUILD {
   Catalyst::Exception->throw("Must include at least one file/directory")
     unless ($self->include_count > 0);
   
+  # if the user picks something lower than 5 it is probably a mistake (really, anything
+  # lower than 8 is probably not a good idea. But the full 40 is probably way overkill)
+  Catalyst::Exception->throw("sha1_string_length must be between 5 and 40")
+    unless ($self->sha1_string_length >= 5 && $self->sha1_string_length <= 40);
+
   # The 'directory' type is a passthrough mode of operation
   if ($self->type eq 'directory') {
     Catalyst::Exception->throw(
@@ -462,7 +469,7 @@ sub file_checksum {
     $fh->close;
   }
   
-  return $Sha1->hexdigest;
+  return substr $Sha1->hexdigest, 0, $self->sha1_string_length;
 }
 
 sub asset_name {
@@ -764,6 +771,17 @@ aggressive value that should be honored by most browsers (1 year):
 
   public, max-age=31536000, s-max-age=31536000
 
+=head2 sha1_string_length
+
+Optional custom length (truncated) for the SHA1 fingerprint/checksum hex string. The full 40 characters is
+probably overkill and so this option is provided if shorter URLs are desired. The lower the number the greater
+the chance of collision, so you just need to balance the risk with how much you want shorter URLs (not that under normal
+use cases these URLs need to be entered by a human in the first place). If you don't understand what this means then
+just leave this setting alone.
+
+Must be a integer between 5 and 40.
+
+Defaults to 40 (full SHA1 hex string).
 
 =head1 METHODS
 
