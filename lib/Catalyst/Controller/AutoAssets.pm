@@ -17,10 +17,6 @@ use Time::HiRes qw(gettimeofday tv_interval);
 use Storable qw(store retrieve);
 use Try::Tiny;
 
-#REMOVE
-use RapidApp::Include qw(sugar perlutil);
-#use Carp::Always;
-
 require Digest::SHA1;
 require MIME::Types;
 require Module::Runtime;
@@ -447,15 +443,6 @@ has 'dir_root', is => 'ro', isa => 'Path::Class::Dir', lazy => 1, default => sub
   return $dir;
 };
 
-
-# for directory type only:
-sub _get_sub_file {
-  my ($self, $file) = @_;
-  # if its already a File object, return as is
-  return $file if (ref $file eq 'Path::Class::File');
-  return $self->dir_root->file($file);
-}
-
 sub _subfile_mtime_verify {
   my ($self, $path) = @_;
   my $File = $self->dir_root->file($path);
@@ -471,6 +458,22 @@ sub _subfile_mtime_verify {
   );
 }
 
+# force rebuild on next request/prepare_asset
+sub clear_asset {
+  my $self = shift;
+  $self->inc_mtimes(undef);
+}
+
+sub _is_rebuild_required {
+  my ($self, $inc_mtimes, $built_mtime) = @_;
+  die "_is_rebuild_required(): missing arguments" unless ($built_mtime);
+  return (
+    $self->inc_mtimes && $self->built_mtime &&
+    $self->inc_mtimes eq $inc_mtimes &&
+    $self->built_mtime eq $built_mtime &&
+    $self->fingerprint_calc_current
+  ) ? 0 : 1;
+}
 
 sub prepare_asset {
   my ($self, $path) = @_;
@@ -496,11 +499,7 @@ sub prepare_asset {
   # Check cached mtimes to see if anything has changed. This is a lighter
   # first pass check than the fingerprint check which calculates a sha1 for
   # all the source files and existing built files
-  return 1 if (
-    $self->fingerprint_calc_current &&
-    $self->inc_mtimes eq $inc_mtimes && 
-    $self->built_mtime eq $built_mtime
-  );
+  return 1 unless ( $self->_is_rebuild_required($inc_mtimes, $built_mtime) );
 
   ####  -----
   ####  The code above this line happens on every request and is designed
@@ -581,12 +580,6 @@ sub prepare_asset {
   return $self->release_build_lock;
 }
 
-# force rebuild on next request
-sub clear_asset {
-  my $self = shift;
-  $self->inc_mtimes(undef);
-}
-
 sub file_checksum {
   my $self = shift;
   my $files = ref $_[0] eq 'ARRAY' ? $_[0] : \@_;
@@ -619,11 +612,8 @@ sub prepare_asset_subfiles {
   die "prepare_asset_subfiles() only applies to 'directory' assets"
     unless ($self->is_dir);
 
-  for my $path (@files) {
-    my $File = $self->_get_sub_file($path)->absolute;
-    die "Bad asset subfile path '$path'" unless (-f $File);
-    $self->prepare_asset($File);
-  }
+  $self->_subfile_mtime_verify($_) for (@files);
+  $self->prepare_asset;
 }
 
 # this global is just used for some internal optimization to avoid calling stat
@@ -632,14 +622,18 @@ sub prepare_asset_subfiles {
 our $_ASSET_PATH_SKIP_PREPARE = 0;
 sub asset_path {
   my ($self, @subpath) = @_;
-  $self->prepare_asset(@subpath) unless ($_ASSET_PATH_SKIP_PREPARE);
+
+  my $path = join('/',@subpath);
+  $self->prepare_asset($path) unless ($_ASSET_PATH_SKIP_PREPARE);
+
   my $base = '/' . $self->action_namespace($self->_app) . '/' . $self->asset_name;
   return $base unless (scalar @subpath > 0);
   Catalyst::Exception->throw("Cannot use subpath with non directory asset")
     unless $self->is_dir;
-  my $File = $self->_get_sub_file(@subpath);
-  my $path = join('/',@subpath);
+
+  my $File = $self->dir_root->file(@subpath);
   Catalyst::Exception->throw("sub file '$path' not found") unless (-f $File);
+
   return join('/',$base,$path);
 }
 
