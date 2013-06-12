@@ -52,6 +52,15 @@ sub inject_asset_controllers {
 }
 
 
+# Convenience method to get all configured html head tags of all the
+# asset controllers at once:
+sub all_html_head_tags {
+  my $c = shift;
+  return join("\r\n", map {
+    $c->controller($_)->html_head_tags
+  } @{$c->asset_controllers} );
+}
+
 
 1;
 

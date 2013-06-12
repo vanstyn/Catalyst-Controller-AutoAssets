@@ -1,13 +1,12 @@
-package Catalyst::Controller::AutoAssets;
+package Catalyst::Controller::AutoAssets::Handler;
 use strict;
 use warnings;
 
 our $VERSION = 0.11;
 
-use Moose;
+use Moose::Role;
 use namespace::autoclean;
 
-BEGIN { extends 'Catalyst::Controller' }
 
 use Path::Class 0.32 qw( dir file );
 use Fcntl qw( :DEFAULT :flock :seek F_GETFL );
@@ -21,47 +20,12 @@ require Digest::SHA1;
 require MIME::Types;
 require Module::Runtime;
 
-#REMOVE
-use RapidApp::Include qw(sugar perlutil);
 
-
-# Save the build params (passed to constructor)
-has '_build_params', is => 'ro', isa => 'HashRef', required => 1;
-around BUILDARGS => sub {
-  my ($orig, $class, $c, @args) = @_;
-  my %params = (ref($args[0]) eq 'HASH') ? %{ $args[0] } : @args; # <-- arg as hash or hashref
-  $params{_build_params} = {%params};
-  return $class->$orig($c,\%params);
-};
-
-has '_Handler' => (
-  is => 'ro', init_arg => undef, lazy => 1,
-  does => 'Catalyst::Controller::AutoAssets::Handler',
-  handles => [qw()],
-  default => sub {
-    my $self = shift;
-    my $class = $self->_resolve_handler_class($self->type);
-    return $class->new({
-      %{$self->_build_params},
-      _Controller => $self
-    });
-  }
+has '_Controller' => (
+  is => 'ro', required => 1,
+  isa => 'Catalyst::Controller::AutoAssets',
+  handles => [qw(_app action_namespace)],
 );
-
-sub _resolve_handler_class {
-	my $self = shift;
-  my $class = shift;
-  # built-in type names:
-  my %type_aliases = ( css => 'CSS', js => 'JS', directory => 'Directory' );
-  $class = $type_aliases{$class} if (exists $type_aliases{$class});
-  
-  # Allow absolute class names using '+' prefix:
-  $class = $class =~ /^\+(.*)$/ ? $1 
-    : "Catalyst::Controller::AutoAssets::Handler::$class";
-	Module::Runtime::require_module($class);
-	return $class;
-}
-
 
 # Directories to include
 has 'include', is => 'ro', isa => 'Str|ArrayRef[Str]', required => 1;  
@@ -109,8 +73,6 @@ has '_include_relative_dir', isa => 'Path::Class::Dir', is => 'ro', lazy => 1,
 sub BUILD {
   my $self = shift;
   
-  $self->_Handler;
-  
   # optionally initialize state data from the copy stored on disk for fast
   # startup (avoids having to always rebuild after every app restart):
   $self->_restore_state if($self->persist_state);
@@ -151,6 +113,9 @@ sub BUILD {
   
   $self->prepare_asset;
 }
+
+
+=pod
 
 #############################
 sub index :Path {
@@ -213,6 +178,9 @@ sub dir_request :Private {
   return $c->response->body( $meta->{file}->openr );
 }
 ############################
+
+
+=cut
 
 sub _valid_subpath {
   my ($self, $c, @path) = @_;
@@ -793,58 +761,6 @@ sub asset_fh {
   my $fh = file($file)->openr or die "$! : $file\n";
   return $fh;
 }
-
-sub unknown_asset {
-  my ($self,$c,$asset) = @_;
-  $asset ||= $c->req->path;
-  $c->res->status(404);
-  $c->res->header( 'Content-Type' => 'text/plain' );
-  $c->res->body( "No such asset '$asset'" );
-  $self->release_build_lock;
-  return $c->detach;
-}
-
-sub get_build_lock_wait {
-  my $self = shift;
-  my $start = time;
-  until($self->get_build_lock) {
-    my $elapsed = time - $start;
-    Catalyst::Exception->throw("AutoAssets: aborting waiting for lock after $elapsed")
-      if ($elapsed >= $self->max_lock_wait);
-    sleep 1;
-  }
-}
-
-sub get_build_lock {
-  my $self = shift;
-  my $fname = $self->lock_file;
-  sysopen(LOCKHANDLE, $fname, O_RDWR|O_CREAT|O_EXCL, 0644)
-    or sysopen(LOCKHANDLE, $fname, O_RDWR)
-    or die "Unable to create or open $fname\n";
-  fcntl(LOCKHANDLE, F_SETFD, FD_CLOEXEC) or die "Failed to set close-on-exec for $fname";
-  my $lockStruct= pack('sslll', F_WRLCK, SEEK_SET, 0, 0, $$);
-  if (fcntl(LOCKHANDLE, F_SETLK, $lockStruct)) {
-    my $data= "$$";
-    syswrite(LOCKHANDLE, $data, length($data)) or die "Failed to write pid to $fname";
-    truncate(LOCKHANDLE, length($data)) or die "Failed to resize $fname";
-    # we do not close the file, so that we maintain the lock.
-    return 1;
-  }
-  $self->release_build_lock;
-  return 0;
-}
-
-sub release_build_lock {
-  my $self = shift;
-  close LOCKHANDLE;
-}
-
-sub end :Private {
-  my ($self,$c) = @_;
-  # Make sure we never keep a build lock past the end of a request:
-  $self->release_build_lock;
-}
-
 
 1;
 
