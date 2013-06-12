@@ -17,6 +17,10 @@ use Time::HiRes qw(gettimeofday tv_interval);
 use Storable qw(store retrieve);
 use Try::Tiny;
 
+#REMOVE
+use RapidApp::Include qw(sugar perlutil);
+#use Carp::Always;
+
 require Digest::SHA1;
 require MIME::Types;
 require Module::Runtime;
@@ -55,21 +59,34 @@ has 'persist_state', is => 'ro', isa => 'Bool', default => sub{0};
 # Optional shorter checksum
 has 'sha1_string_length', is => 'ro', isa => 'Int', default => sub{40};
 
+# directory to use for relative includes (defaults to the Catalyst home dir);
+# TODO: coerce from Str
+has '_include_relative_dir', isa => 'Path::Class::Dir', is => 'ro', lazy => 1,
+  default => sub { dir( (shift)->_app->config->{home} )->resolve };
+
+
 ######################################
 
 
 sub BUILD {
   my $self = shift;
   
+  # optionally initialize state data from the copy stored on disk for fast
+  # startup (avoids having to always rebuild after every app restart):
+  $self->_restore_state if($self->persist_state);
+
   my $type = $self->type;
   my %valid = map {$_=>1} @valid_types; # perl 5.8 doesn't like ~~ operator
   Catalyst::Exception->throw(
     "Invalid type '$type' = must be one of: " . join(', ', @valid_types)
   ) unless ($valid{$type}); # TODO: setup a real type constraint
   
-  Catalyst::Exception->throw("Must include at least one file/directory")
-    unless ($self->include_count > 0);
+  # init includes
+  $self->includes;
   
+  Catalyst::Exception->throw("Must include at least one file/directory")
+    unless (scalar @{$self->includes} > 0);
+
   # if the user picks something lower than 5 it is probably a mistake (really, anything
   # lower than 8 is probably not a good idea. But the full 40 is probably way overkill)
   Catalyst::Exception->throw("sha1_string_length must be between 5 and 40")
@@ -81,14 +98,8 @@ sub BUILD {
       "'minify' isn't allowed with 'directory' asset type"
     ) if ($self->minify);
     
-    Catalyst::Exception->throw(
-      "Only one include directory is allowed with 'directory' asset type"
-    ) unless ($self->include_count == 1);
-    
-    my ($root) = $self->includes;
-    
-    Catalyst::Exception->throw("Bad include path '$root'")
-      unless (-d $root);
+    # init dir_root:
+    $self->dir_root;
   }
   else {
     Catalyst::Exception->throw("No minifier available")
@@ -98,9 +109,6 @@ sub BUILD {
   # init work_dir:
   $self->work_dir;
   
-  # optionally initialize state data from the copy stored on disk:
-  $self->_restore_state if($self->persist_state);
-
   $self->prepare_asset;
 }
 
@@ -114,16 +122,6 @@ sub index :Path {
   );
   
   return $self->is_dir ? $c->detach('dir_request') : $c->detach('file_request');
-}
-
-sub cur_request :Private {
-  my ( $self, $c, $arg, @args ) = @_;
-  
-  $self->prepare_asset(@args);
-
-  $c->response->header( 'Cache-Control' => 'no-cache' );
-  $c->response->redirect(join('/',$self->asset_path,@args), 307);
-  return $c->detach;
 }
 
 sub file_request :Private {
@@ -143,25 +141,46 @@ sub file_request :Private {
   return $c->response->body( $self->asset_fh );
 }
 
+sub cur_request :Private {
+  my ( $self, $c, $arg, @args ) = @_;
+
+  my $path = $self->_valid_subpath($c,@args);
+  $self->prepare_asset($path);
+
+  $c->response->header( 'Cache-Control' => 'no-cache' );
+  $c->response->redirect(join('/',$self->asset_path,@args), 307);
+  return $c->detach;
+}
+
 sub dir_request :Private {
   my ( $self, $c, $sha1, @args ) = @_;
-  
-  my $want_asset = join('/',$sha1,@args);
-  my $File = $self->_get_sub_file(@args);
-  return $self->unknown_asset($c,$want_asset) unless (-f $File);
-  
-  $self->prepare_asset($File);
 
-  return $self->unknown_asset($c,$want_asset) unless ($sha1 eq $self->asset_name);
+  my $path = $self->_valid_subpath($c,@args);
+  $self->prepare_asset($path);
+
+  return $self->unknown_asset($c) unless (
+    $path && $sha1 eq $self->asset_name
+  );
+
+  my $meta = $self->subfile_meta->{$path}
+    or die "Unexpected error - meta data missing for subfile '$path'!";
 
   $c->response->header(
-    'Content-Type' => $self->_ext_to_type($File),
+    'Content-Type' => $meta->{content_type},
     'Cache-Control' => $self->cache_control_header
   );
 
-  return $c->response->body( $File->openr );
+  return $c->response->body( $meta->{file}->openr );
 }
 ############################
+
+sub _valid_subpath {
+  my ($self, $c, @path) = @_;
+  return undef unless (scalar @path > 0);
+  my $File = $self->dir_root->file(@path);
+  return $self->unknown_asset($c) unless (-f $File);
+  return join('/',@path); # <-- return path string because it is the lookup key
+}
 
 sub is_dir { return (shift)->type eq 'directory' ? 1 : 0 }
 
@@ -193,7 +212,9 @@ has 'asset_content_type', is => 'ro', isa => 'Str', lazy => 1, default => sub {
   }
 };
 
-has 'work_dir', is => 'ro', lazy => 1, default => sub {
+
+
+has 'work_dir', is => 'ro', isa => 'Path::Class::Dir', lazy => 1, default => sub {
   my $self = shift;
   my $c = $self->_app;
   
@@ -205,26 +226,38 @@ has 'work_dir', is => 'ro', lazy => 1, default => sub {
   return $dir->resolve;
 };
 
-has 'built_file', is => 'ro', lazy => 1, default => sub {
+has 'built_file', is => 'ro', isa => 'Path::Class::File', lazy => 1, default => sub {
   my $self = shift;
   my $filename = 'built.' . $self->type;
   return file($self->work_dir,$filename);
 };
 
-has 'fingerprint_file', is => 'ro', lazy => 1, default => sub {
+has 'fingerprint_file', is => 'ro', isa => 'Path::Class::File', lazy => 1, default => sub {
   my $self = shift;
   return file($self->work_dir,'fingerprint');
 };
 
-has 'lock_file', is => 'ro', lazy => 1, default => sub {
+has 'lock_file', is => 'ro', isa => 'Path::Class::File', lazy => 1, default => sub {
   my $self = shift;
   return file($self->work_dir,'lockfile');
 };
 
-has 'MimeTypes', is => 'ro', lazy => 1, default => sub {
+has 'MimeTypes', is => 'ro', isa => 'MIME::Types', lazy => 1, default => sub {
   my $self = shift;
   return MIME::Types->new( only_complete => 1 );
 };
+
+
+sub _resolve_subfile_content_type {
+  my $self = shift;
+  my $File = shift;
+  my $content_type = $self->subfile_meta->{$File}->{content_type}
+    or die "content_type not found in subfile_meta for $File!";
+  return $content_type;
+}
+
+# CodeRef used to determine the Content-Type of each 'directory' subfile
+has 'content_type_resolver', is => 'ro', isa => 'CodeRef', default => sub{ \&_ext_to_type };
 
 # looks up the correct MIME type for the current file extension
 # (adapted from Static::Simple)
@@ -247,28 +280,25 @@ sub _ext_to_type {
   }
 }
 
-
-sub includes {
+has 'includes', is => 'ro', isa => 'ArrayRef', lazy => 1, default => sub {
   my $self = shift;
-  return ref $self->include ? @{$self->include} : $self->include;
-}
-
-sub include_count {
-  my $self = shift;
-  return ref $self->include ? scalar @{$self->include} : 1;
-}
+  my $rel = $self->_include_relative_dir;
+  my @list = ref $self->include ? @{$self->include} : $self->include;
+  return [ map {
+    my $inc = file($_);
+    $inc = $rel->file($inc) unless ($inc->is_absolute);
+    $inc = dir($inc) if (-d $inc); #<-- convert to Path::Class::Dir
+    $inc->resolve
+  } @list ];
+};
 
 sub get_include_files {
   my $self = shift;
 
   my @files = ();
-  for my $inc ($self->includes) {
-    $inc = dir($inc)->absolute;
-    if(-f $inc) {
-      push @files, $inc;
-    }
-    elsif(-d $inc) {
-      dir($inc)->recurse(
+  for my $inc (@{$self->includes}) {
+    if($inc->is_dir) {
+      $inc->recurse(
         preorder => 1,
         depthfirst => 1,
         callback => sub {
@@ -278,22 +308,22 @@ sub get_include_files {
       );
     }
     else {
-      die "AutoAsset include path '$inc' not found";
+      push @files, $inc;
     }
   }
   
   # force consistent ordering of files:
-  @files = sort @files;
-   
-  return \@files;
+  return [sort @files];
 }
+
+
 
 has 'last_fingerprint_calculated', is => 'rw', isa => 'Maybe[Int]', default => sub{undef};
 
 has 'built_mtime', is => 'rw', isa => 'Maybe[Str]', default => sub{undef};
 sub get_built_mtime {
   my $self = shift;
-  return -f $self->built_file ? stat($self->built_file)->mtime : undef;
+  return -f $self->built_file ? $self->built_file->stat->mtime : undef;
 }
 
 # inc_mtimes are the mtime(s) of the include files. For directory assets
@@ -302,7 +332,7 @@ has 'inc_mtimes', is => 'rw', isa => 'Maybe[Str]', default => undef;
 sub get_inc_mtime_concat {
   my $self = shift;
   my $list = shift;
-  return join('-', map { stat($_)->mtime } @$list );
+  return join('-', map { $_->stat->mtime } @$list );
 }
 
 # subfile_meta applies only to 'directory' assets. It is a cache of mtimes of
@@ -314,8 +344,12 @@ has 'subfile_meta', is => 'rw', isa => 'HashRef', default => sub {{}};
 sub set_subfile_meta {
   my $self = shift;
   my $list = shift;
-  return $self->subfile_meta({
-    map { $_ => { mtime => stat($_)->mtime } } @$list
+  $self->subfile_meta({
+    map { $_->relative($self->dir_root)->stringify => {
+      file => $_,
+      mtime => $_->stat->mtime,
+      content_type => $self->content_type_resolver->($self,$_)
+    } } @$list
   });
 }
 
@@ -331,14 +365,14 @@ sub calculate_fingerprint {
 sub current_fingerprint {
   my $self = shift;
   return undef unless (-f $self->fingerprint_file);
-  my $fingerprint = file($self->fingerprint_file)->slurp;
+  my $fingerprint = $self->fingerprint_file->slurp;
   return $fingerprint;
 }
 
 sub save_fingerprint {
   my $self = shift;
   my $fingerprint = shift or die "Expected fingerprint/checksum argument";
-  return file($self->fingerprint_file)->spew($fingerprint);
+  return $self->fingerprint_file->spew($fingerprint);
 }
 
 sub calculate_save_fingerprint {
@@ -357,7 +391,7 @@ sub fingerprint_calc_current {
 
 # -----
 # Quick and dirty state persistence for faster startup
-has 'persist_state_file', is => 'ro', lazy => 1, default => sub {
+has 'persist_state_file', is => 'ro', isa => 'Path::Class::File', lazy => 1, default => sub {
   my $self = shift;
   return file($self->work_dir,'state.dat');
 };
@@ -395,19 +429,36 @@ sub _restore_state {
 }
 # -----
 
+# only applies to 'directory' asset type
+has 'dir_root', is => 'ro', isa => 'Path::Class::Dir', lazy => 1, default => sub {
+  my $self = shift;
+
+  die "dir_root only applies to 'directory' asset types"
+    unless ($self->is_dir);
+
+  die "'directory' assets must have exactly one include path"
+    unless (scalar @{$self->includes} == 1);
+
+  my $dir = $self->includes->[0]->absolute;
+
+  die "include path '$dir' is not a directory"
+    unless ($dir->is_dir);
+
+  return $dir;
+};
+
 
 # for directory type only:
 sub _get_sub_file {
-  my $self = shift;
+  my ($self, $file) = @_;
   # if its already a File object, return as is
-  return $_[0] if (ref $_[0] eq 'Path::Class::File');
-  my ($root) = $self->includes;
-  return file($root,@_);
+  return $file if (ref $file eq 'Path::Class::File');
+  return $self->dir_root->file($file);
 }
 
 sub _subfile_mtime_verify {
-  my $self = shift;
-  my $File = $self->_get_sub_file(@_)->absolute;
+  my ($self, $path) = @_;
+  my $File = $self->dir_root->file($path);
 
   # Check the mtime of the requested file to see if it has changed
   # and force a rebuild if it has. This is done because it is too
@@ -415,22 +466,22 @@ sub _subfile_mtime_verify {
   # changes within files would not otherwise be caught since file
   # content changes do not update the parent directory mtime
   $self->clear_asset unless (
-    exists $self->subfile_meta->{$File} &&
-    $File->stat->mtime eq $self->subfile_meta->{$File}->{mtime}
+    exists $self->subfile_meta->{$path} &&
+    $File->stat->mtime eq $self->subfile_meta->{$path}->{mtime}
   );
 }
 
 
 sub prepare_asset {
-  my ($self, @subpath) = @_;
+  my ($self, $path) = @_;
   my $start = [gettimeofday];
 
-  file($self->built_file)->touch unless (-e $self->built_file);
+  $self->built_file->touch unless (-e $self->built_file);
 
   # Special code path: if this is associated with a sub file request
   # in a 'directory' type asset, clear the asset to force a rebuild
   # below if the *subfile* mtime has changed
-  $self->_subfile_mtime_verify(@subpath) if ($self->is_dir && scalar @subpath > 0);
+  $self->_subfile_mtime_verify($path) if ($self->is_dir && $path);
 
   # For 'directory' only consider the mtime of the top directory and don't
   # read in all the files (yet... we will read them in only if we need to rebuild)
@@ -438,7 +489,7 @@ sub prepare_asset {
   #  because that doesn't update the directory mtime; only filename changes will be seen.
   #  Update: That is what _subfile_mtime_verify above is for... to inexpensively catch
   #  this case for individual sub files
-  my $files = $self->is_dir ? [ $self->includes ] : $self->get_include_files;
+  my $files = $self->is_dir ? $self->includes : $self->get_include_files;
   my $inc_mtimes = $self->get_inc_mtime_concat($files);
   my $built_mtime = $self->get_built_mtime;
 
@@ -493,8 +544,7 @@ sub prepare_asset {
   if($self->is_dir) {
     # The built file is just a placeholder in the case of 'directory' type 
     # asset whose data is served from the original files
-    my ($root) = $self->includes;
-    my @relative = map { file($_)->relative($root) } @$files;
+    my @relative = map { file($_)->relative($self->dir_root) } @$files;
     $fd->write(join("\r\n",@relative) . "\r\n");
   }
   else {
@@ -690,10 +740,13 @@ sub asset_fh {
 }
 
 sub unknown_asset {
-  my ($self,$c, $asset) = @_;
+  my ($self,$c,$asset) = @_;
+  $asset ||= $c->req->path;
   $c->res->status(404);
   $c->res->header( 'Content-Type' => 'text/plain' );
-  return $c->res->body( "No such asset '$asset'" );
+  $c->res->body( "No such asset '$asset'" );
+  $self->release_build_lock;
+  return $c->detach;
 }
 
 sub get_build_lock_wait {
