@@ -2,7 +2,7 @@ package Catalyst::Plugin::AutoAssets;
 use strict;
 use warnings;
 
-our $VERSION = 0.11;
+our $VERSION = 0.19;
 
 use Moose::Role;
 use namespace::autoclean;

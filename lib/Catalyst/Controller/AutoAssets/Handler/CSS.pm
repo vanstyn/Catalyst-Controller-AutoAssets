@@ -2,7 +2,7 @@ package Catalyst::Controller::AutoAssets::Handler::CSS;
 use strict;
 use warnings;
 
-our $VERSION = 0.11;
+# VERSION
 
 use Moose;
 use namespace::autoclean;
@@ -28,6 +28,15 @@ has 'minifier', is => 'ro', isa => 'Maybe[CodeRef]', lazy => 1, default => sub {
 };
 
 has 'asset_content_type', is => 'ro', isa => 'Str', default => 'text/css';
+has 'ext', is => 'ro', isa => 'Str', default => 'css';
+
+sub is_current_request_arg {
+  my ($self, $arg) = @_;
+  return (
+    $arg eq $self->current_alias ||
+    $arg eq $self->current_alias . '.' . $self->ext
+  ) ? 1 : 0;
+}
 
 sub asset_request {
   my ( $self, $c, @args ) = @_;
@@ -48,7 +57,7 @@ sub asset_request {
 
 sub asset_name {
   my $self = shift;
-  return $self->current_fingerprint . '.css';
+  return $self->current_fingerprint . '.' . $self->ext;
 }
 
 sub asset_fh {

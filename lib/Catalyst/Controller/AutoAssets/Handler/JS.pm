@@ -2,7 +2,7 @@ package Catalyst::Controller::AutoAssets::Handler::JS;
 use strict;
 use warnings;
 
-our $VERSION = 0.11;
+# VERSION
 
 use Moose;
 use namespace::autoclean;
@@ -18,11 +18,7 @@ has 'minifier', is => 'ro', isa => 'Maybe[CodeRef]', lazy => 1, default => sub {
 };
 
 has 'asset_content_type', is => 'ro', isa => 'Str', default => 'text/javascript';
-
-sub asset_name {
-  my $self = shift;
-  return $self->current_fingerprint . '.js';
-}
+has 'ext', is => 'ro', isa => 'Str', default => 'js';
 
 sub html_head_tags {
   my $self = shift;

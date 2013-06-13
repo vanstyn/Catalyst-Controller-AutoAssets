@@ -2,7 +2,7 @@ package Catalyst::Controller::AutoAssets::Handler::Directory;
 use strict;
 use warnings;
 
-our $VERSION = 0.11;
+# VERSION
 
 use Moose;
 use namespace::autoclean;

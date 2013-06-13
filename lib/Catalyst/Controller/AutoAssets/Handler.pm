@@ -2,7 +2,7 @@ package Catalyst::Controller::AutoAssets::Handler;
 use strict;
 use warnings;
 
-our $VERSION = 0.11;
+# VERSION
 
 use Moose::Role;
 use namespace::autoclean;
@@ -97,20 +97,16 @@ before BUILD => sub {
 sub request {
   my ( $self, $c, @args ) = @_;
   
-  # can this be removed?
-  $self->built_file->touch unless (-e $self->built_file);
-  
-  return $self->cur_request($c, @args) if (
-    $self->current_redirect &&
-    ($args[0] eq $self->current_alias || $args[0] eq $self->current_alias . '.' . $self->type)
-  );
-  
+  return $self->current_request($c, @args) if $self->is_current_request_arg(@args);
   return $self->asset_request($c,@args);
 }
 
+sub is_current_request_arg {
+  my ($self, $arg) = @_;
+  return $arg eq $self->current_alias ? 1 : 0;
+}
 
-
-sub cur_request  {
+sub current_request  {
   my ( $self, $c, $arg, @args ) = @_;
 
   my $path = $self->_valid_subpath($c,@args);
