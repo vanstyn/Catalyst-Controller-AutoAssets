@@ -137,7 +137,7 @@ L<Catalyst::Plugin::AutoAssets>.
 
 =head1 DESCRIPTION
 
-Fast and convenient serving of assets (CSS, JavaScript, etc) at URL path(s) containing sha1 
+Fast, convenient and extendable serving of assets (CSS, JavaScript, etc) at URL path(s) containing sha1 
 checksums. This is an alternative/supplement to L<Catalyst::Plugin::Static::Simple> or
 external/webserver for serving of an application's "nearly static" content.
 
@@ -150,7 +150,8 @@ see the new version.
 
 This is particularly useful when deploying new versions of an application where client browsers
 out in the network might have cached CSS and JavaScript from previous versions. Instead of asking 
-users to hit "F5", everyone gets the new content automagically, with no intervention required. 
+users to hit "F5", everyone gets the new content automagically, with no intervention required (and no
+sporadically broken user experiences when you forget to plan for browser caches).
 All you have to do is change the content; the module handles the rest.
 
 This module also provides some optional extra features that are useful in both development and
