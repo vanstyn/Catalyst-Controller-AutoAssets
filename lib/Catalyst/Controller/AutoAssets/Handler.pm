@@ -27,7 +27,7 @@ require Digest::SHA1;
 require MIME::Types;
 require Module::Runtime;
 
-has '_Controller' => (
+has 'Controller' => (
   is => 'ro', required => 1,
   isa => 'Catalyst::Controller::AutoAssets',
   handles => [qw(type _app action_namespace unknown_asset)],
@@ -61,7 +61,7 @@ has 'sha1_string_length', is => 'ro', isa => 'Int', default => sub{40};
 
 # directory to use for relative includes (defaults to the Catalyst home dir);
 # TODO: coerce from Str
-has '_include_relative_dir', isa => 'Path::Class::Dir', is => 'ro', lazy => 1,
+has 'include_relative_dir', isa => 'Path::Class::Dir', is => 'ro', lazy => 1,
   default => sub { dir( (shift)->_app->config->{home} )->resolve };
 
 
@@ -149,23 +149,9 @@ has 'lock_file', is => 'ro', isa => 'Path::Class::File', lazy => 1, default => s
   return file($self->work_dir,'lockfile');
 };
 
-has 'work_dir', is => 'ro', isa => 'Path::Class::Dir', lazy => 1, default => sub {
-  my $self = shift;
-  my $c = $self->_app;
-  
-  my $tmpdir = Catalyst::Utils::class2tempdir($c)
-    || Catalyst::Exception->throw("Can't determine tempdir for $c");
-    
-  my $dir = dir($tmpdir, "AutoAssets",  $self->action_namespace($c));
-  $dir->mkpath($self->_app->debug);
-  return $dir->resolve;
-};
-
-
-
 has 'includes', is => 'ro', isa => 'ArrayRef', lazy => 1, default => sub {
   my $self = shift;
-  my $rel = $self->_include_relative_dir;
+  my $rel = $self->include_relative_dir;
   my @list = ref $self->include ? @{$self->include} : $self->include;
   return [ map {
     my $inc = file($_);
@@ -473,4 +459,54 @@ sub release_build_lock {
 }
 
 1;
+
+__END__
+
+=pod
+
+=head1 NAME
+
+Catalyst::Controller::AutoAssets::Handler - Handler type Role and default namespace
+
+=head1 DESCRIPTION
+
+This is the base Role for C<Catalyst::Controller::AutoAssets> Handler classes and is
+where the majority of the work is done for the AutoAssets module. The Handler class is 
+specified in the 'type' config param and is relative to this namespace. Absolute class
+names can also be specified with the '+' prefix, so the following are equivalent:
+
+  type => 'Directory'
+  
+  type => '+Catalyst::Controller::AutoAssets::Handler::Directory'
+
+Custom Handler classes can be written and used as long as they consume this Role. For examples
+of how to write custom Handlers, see the existing Handlers below for reference.
+
+=head1 TYPE HANDLERS
+
+These are the current built in handler classes:
+
+=over
+
+=item L<Catalyst::Controller::AutoAssets::Handler::Directory>
+
+=item L<Catalyst::Controller::AutoAssets::Handler::CSS>
+
+=item L<Catalyst::Controller::AutoAssets::Handler::JS>
+
+=back
+
+=head1 AUTHOR
+
+Henry Van Styn <vanstyn@cpan.org>
+
+=head1 COPYRIGHT AND LICENSE
+
+This software is copyright (c) 2013 by IntelliTree Solutions llc.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
+
+=cut
+
 

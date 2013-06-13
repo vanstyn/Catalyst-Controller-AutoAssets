@@ -40,7 +40,8 @@ has '_Handler' => (
 sub _resolve_handler_class {
 	my $self = shift;
   my $class = shift;
-  # built-in type names:
+  
+  # legacy, original, lower-case, built-in type names:
   my %type_aliases = ( css => 'CSS', js => 'JS', directory => 'Directory' );
   $class = $type_aliases{$class} if (exists $type_aliases{$class});
   
@@ -92,7 +93,7 @@ Catalyst::Controller::AutoAssets - Automatic asset serving via sha1-based URLs
 
 =head1 VERSION
 
-version 0.11
+version 0.19
 
 =head1 SYNOPSIS
 
@@ -107,7 +108,7 @@ Then, in your .conf:
 
   <Controller::Assets::MyCSS>
     include   root/my_stylesheets/
-    type      css
+    type      CSS
     minify    1
   </Controller::Assets::MyCSS>
 
@@ -117,22 +118,32 @@ And in your .tt files:
     <link rel="stylesheet" type="text/css" href="[% c.controller('Assets::MyCSS').asset_path %]" />
   </head>
 
+Or, to have the appropriate tags generated for you:
+
+  <head>
+    [% c.controller('Assets::MyCSS').html_head_tags %]
+  </head>
+
 Or, in static HTML:
 
   <head>
     <link rel="stylesheet" type="text/css" href="/assets/mycss/current.css" />
   </head>
-  
+
+=head1 PLUGIN INTERFACE
+
+A Catalyst Plugin interface is also available for easy setup of multiple asset controllers at once. See
+L<Catalyst::Plugin::AutoAssets>.
 
 =head1 DESCRIPTION
 
-Fast, convenient serving of assets (css, javascript, etc) at URL path(s) containing a sha1 
-checksum of the content. This is an alternative/supplement to L<Catalyst::Plugin::Static::Simple> or
+Fast and convenient serving of assets (CSS, JavaScript, etc) at URL path(s) containing sha1 
+checksums. This is an alternative/supplement to L<Catalyst::Plugin::Static::Simple> or
 external/webserver for serving of an application's "nearly static" content.
 
 The benefit of serving files through CAS paths ("content-addressable storage" - same design used by Git) 
-is that it automatically alleviates client caching issues while still allowing for 
-maximum aggressive cache settings. Because URL paths contain the sha1 checksum of the data, 
+is that it automatically alleviates client caching issues while simulataneously taking advantage of 
+maximum aggressive HTTP cache settings. Because URL paths contain the sha1 checksum of the data, 
 browsers can safely cache the content forever because "changes" automatically become new URLs. 
 If the content (CSS, JavaScript or other) is modified later on, the client browsers instantly 
 see the new version.
@@ -145,13 +156,47 @@ All you have to do is change the content; the module handles the rest.
 This module also provides some optional extra features that are useful in both development and
 production environments for automatically managing, minifying and deploying CSS and JavaScript assets.
 
+=head1 PERFORMANCE
+
+Besides the performance benefits of aggressive HTTP caching (which can be significant, depending of the
+ratio of first-time visitors to returning visitors) this module has also been optimized to serve the requests
+it does receive as fast as possible. On typical requests, all that happens besides returning the content from
+disk is one extra file stat and comparison of mtime. So, even with it's real-time checksums, this module is
+essentially identical to L<Catalyst::Plugin::Static::Simple> from a performance perspective (and, unlike 
+Static::Simple, this module caches guessed Content-Types instead of doing it on every request, so it
+might even be faster).
+
+=head2 When to use this module
+
+This module is great for development, web applications, and any production site with a high percentage of
+returning users. If you want to take maximum advantage of HTTP caching without any work or planning, this module
+is for you. Or, if you just want an easy and flexible way to manage static content, performance benefits aside,
+this module is also for you.
+
+=head2 When not to
+
+The only cases where this module is not recommended is on very high-volume sites where most of the visits are
+unique (i.e. little benefit from HTTP caching), or where the scale is large enough that the marginal
+increase in speed of serving static content directly from the web server (like Apache), instead of through Catalyst,
+is worth manually - and correctly - doing all the things that this module does automatically. Unless you are carefully
+planning your HTTP caching strategy (such configuring Apache's cache settings) and coordinating all this with
+with content changes/new releases, this module is likely to outperform your manual setup.
+
+
 =head1 CONFIG PARAMS
+
+Note: All config params and methods are actually delegated to the Type Handler specified in 'type' and some are
+specific (as noted below). For more information and details on writing custom Type Handlers see
+L<Catalyst::Controller::AutoAssets::Handler>.
 
 =head2 type
 
-B<Required> - The asset type: C<directory>, C<css> or C<js>.
+B<Required> - The asset type: C<Directory>, C<CSS>, C<JS>, etc.
 
-The C<directory> asset type works in a similar manner as Static::Simple to make some directory
+The asset type is a "Handler" class name, and the core built in types are covered below. Custom handlers
+can also be written. See L<Catalyst::Controller::AutoAssets::Handler> for details.
+
+The C<Directory> asset type works in a similar manner as Static::Simple to make some directory
 structure accessible at a public URL. The root of the structure is made available at the URL path:
 
   <CONTROLLER_PATH>/<SHA1>/
@@ -162,24 +207,24 @@ the file extension (same as Static::Simple does).
 Because the sha1 checksum changes automatically and is unknown in advance, the above Asset Path is made available
 via the C<asset_path()> controller method for use in TT files and throughout the application.
 
-The C<css> and C<js> types serve one automatically generated text file that is concatenated and
+The C<CSS> and C<JS> types serve one automatically generated text file that is concatenated and
 optionally minified from the include files. The single, generated file is made available at the URL 
 Path:
 
-  <CONTROLLER_PATH>/<SHA1>.js    # for 'js' type
-  <CONTROLLER_PATH>/<SHA1>.css   # for 'css' type
+  <CONTROLLER_PATH>/<SHA1>.js    # for 'JS' type
+  <CONTROLLER_PATH>/<SHA1>.css   # for 'CSS' type
 
 The js/css types provide a bonus mode of operation to provide a simple and convenient way to 
 manage groups of CSS and JavaScript files to be automatically deployed in the application. This
 is also particularly useful during development. Production applications with their own management
-and build process for CSS and JavaScript would simply use the C<directory> type.
+and build process for CSS and JavaScript would simply use the C<Directory> type.
 
 =head2 include
 
 B<Required> - String or ArrayRef. The path(s) on the local filesystem containing the source asset files. 
-For C<directory> type this must be exactly one directory, while for C<css> and C<js> it can
+For C<Directory> type this must be exactly one directory, while for C<CSS> and C<JS> it can
 be a list of directories. The C<include> directory becomes the root of the files hosted as-is
-for the C<directory> type, while for C<css> and C<js> asset types it is the include files 
+for the C<Directory> type, while for C<CSS> and C<JS> asset types it is the include files 
 concatinated together (and possibly minified) to be served as the single file.
 
 =head2 current_redirect
@@ -192,7 +237,7 @@ asset path.
   <CONTROLLER_PATH>/current.js    # for 'js' type
   <CONTROLLER_PATH>/current.css   # for 'css' type
 
-For instance, you might reference a CSS file from a C<directory> asset C<Controller::Assets::ExtJS> 
+For instance, you might reference a CSS file from a C<Directory> asset C<Controller::Assets::ExtJS> 
 using this URL path (i.e. href in an HTML C<link> tag):
 
   /assets/extjs/current/resources/css/ext-all.css
@@ -213,29 +258,29 @@ Defaults to true (1).
 =head2 current_alias
 
 Alias to use for the C<current_redirect>. Defaults to 'current' (which also implies 'current.js'/'current.css'
-for C<js> and C<css> asset types).
+for C<JS> and C<CSS> asset types).
 
 =head2 minify
 
-Whether or not to attempt to minify content for C<css> or C<js> asset types. This is a purely optional
+Whether or not to attempt to minify content for C<CSS> or C<JS> asset types. This is a purely optional
 convenience feature.
 
-Defaults to false (0). Does not apply to the C<directory> asset type.
+Defaults to false (0). Does not apply to the C<Directory> asset type.
 
 =head2 minifier
 
 CodeRef used to minify the content when C<minify> is true. The default code is a pass-through to 
-C<CSS::Minifier::minify()> for C<css> assets and C<JavaScript::Minifier::minify()> for C<js>. If
+C<CSS::Minifier::minify()> for C<CSS> assets and C<JavaScript::Minifier::minify()> for C<JS>. If
 you want to override you must follow the same API as in those modules, using the C<input> and 
 C<outfile> filehandle interface. See L<JavaScript::Minifier> and L<CSS::Minifier> for more details.
 
-Does not apply to the C<directory> asset type.
+Does not apply to the C<Directory> asset type.
 
 =head2 work_dir
 
 The directory where asset-specific files are generated and stored. This contains the checksum/fingerprint 
-file, the lock file, and the built file. In the case of C<directory> assets the built file contains a manifest
-of files and in the case of C<css> and C<js> assets it contains the actual asset content (concatenated and 
+file, the lock file, and the built file. In the case of C<Directory> assets the built file contains a manifest
+of files and in the case of C<CSS> and C<JS> assets it contains the actual asset content (concatenated and 
 possibly minified)
 
 Defaults to:
@@ -262,7 +307,7 @@ regardless of whether or not the mtime has changed. 0 means infinite/disabled.
 For performance, once the system has calculated the checksum of the asset content it caches the mtime
 of the include file(s) and verifies on each request to see if they have changed. If they have, it 
 regenerates the asset on the fly (recalculates the checksum and concatenates and minifies (if enabled)
-for C<css> and C<js> asset types). If C<max_fingerprint_calc_age> is set to a non-zero value, it will force the
+for C<CSS> and C<JS> asset types). If C<max_fingerprint_calc_age> is set to a non-zero value, it will force the
 system to regenerate at least every N seconds regardless of the mtime. This would only be needed in cases
 where you are worried the content could change without changing the mtime which shouldn't be needed in
 most cases.
@@ -271,8 +316,8 @@ Defaults to 0.
 
 =head2 persist_state
 
-Whether or not to persist and use state data (fingerprints and mtimes) across restarts to avoid rebuilding which may
-be expensive and unnecessary. The asset fingerprint is normally always recalculated at startup, but if this option
+For faster start-up, whether or not to persist and use state data (fingerprints and mtimes) across restarts to avoid 
+rebuilding which may be expensive and unnecessary. The asset fingerprint is normally always recalculated at startup, but if this option
 is enabled it is loaded from a cache/state file maintained on disk. This is useful for assets that take a long time
 to build (such as big include libs) and is fine as long as you trust the state data stored on disk.
 
@@ -287,9 +332,9 @@ Defaults to false (0).
 =head2 asset_content_type
 
 The content type returned in the 'Content-Type' header. Defaults to C<text/css> or C<text/javascript>
-for the C<css> and C<js> types respectively. 
+for the C<CSS> and C<JS> types respectively. 
 
-Does not apply to C<directory> asset type. For files within C<directory> type assets, the Content-Type 
+Does not apply to C<Directory> asset type. For files within C<Directory> type assets, the Content-Type 
 is set according to the file extension using L<MIME::Types>.
 
 =head2 cache_control_header
@@ -311,25 +356,31 @@ Must be a integer between 5 and 40.
 
 Defaults to 40 (full SHA1 hex string).
 
+=head2 include_relative_dir
+
+The directory to use to resolve relative paths in the C<include> param. Defaults to the Catalyst home directory.
+
 =head1 METHODS
-
-=head2 is_dir
-
-Returns true (1) if the asset type is C<directory> and false (0) if the type is C<css> or C<js>.
 
 =head2 asset_path
 
 Returns the current, public URL path to the asset:
 
-  <CONTROLLER_PATH>/<SHA1>       # for 'directory' type
-  <CONTROLLER_PATH>/<SHA1>.js    # for 'js' type
-  <CONTROLLER_PATH>/<SHA1>.css   # for 'css' type
+  <CONTROLLER_PATH>/<SHA1>       # for 'Directory' type
+  <CONTROLLER_PATH>/<SHA1>.js    # for 'JS' type
+  <CONTROLLER_PATH>/<SHA1>.css   # for 'CSS' type
 
-For C<directory> asset types, accepts an optional subpath argument to a specific file. For example,
+For C<Directory> asset types, accepts an optional subpath argument to a specific file. For example,
 if there was a file C<images/logo.gif> within the include directory, $c->controller('Foo::MyAsset')->asset_path('images/logo.gif')
 might return:
 
   /foo/myasset/1512834162611d99fab246dfa87345a37f68ed95f/images/logo.gif
+
+=head2 html_head_tags
+
+Convenience method to generate a set of tags, such as CSS <link> and JS <script>, suitable to drop 
+into the <head> section of an HTML document. What this returns, if anything, is dependent on the asset
+type.
 
 =head1 BUGS
 

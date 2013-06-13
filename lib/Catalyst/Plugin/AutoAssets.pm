@@ -89,13 +89,13 @@ version 0.11
     'Plugin::AutoAssets' => {
       assets => {
         'Assets::ExtJS' => {
-          type => 'directory',
+          type => 'Directory',
           include => 'ext-3.4.0',
           persist_state => 1,
           sha1_string_length => 15
         },
         'Assets::MyCSS' => {
-          type => 'css',
+          type => 'CSS',
           include => '/path/to/css',
           minify => 1
         }
@@ -110,21 +110,20 @@ version 0.11
       assets => [
         {
           controller => 'Assets::ExtJS',
-          type => 'directory',
+          type => 'Directory',
           include => 'ext-3.4.0',
           persist_state => 1,
           sha1_string_length => 15
         },
         {
           controller => 'Assets::MyCSS',
-          type => 'css',
+          type => 'CSS',
           include => '/path/to/css',
           minify => 1
         }
       ]
     }
   );
-
 
 =head1 DESCRIPTION
 
@@ -136,6 +135,23 @@ will be injected into your application at runtime.
 
 This is just a faster setup than creating the controller classes manually. See L<Catalyst::Controller::AutoAssets>
 for details and supported config params.
+
+=head1 CONFIG PARAMS
+
+=head2 assets
+
+HashRef or ArrayRef of L<Catalyst::Controller::AutoAssets> configs. Defines the name of each controller to create
+and the config to use. In HashRef form, the Controller name is specified in the keys with hashref config values.
+ArrayRef form is a list of hashref configs with an extra key 'controller' to set the Controller name (removed from
+the config before being passed into the Controller).
+
+See the SYNOPSIS above for examples of both.
+
+=head1 METHODS
+
+=head2 all_html_head_tags
+
+Convenience method concats the output of C<html_head_tags()> from all the AutoAssets controllers at once.
 
 =head1 AUTHOR
 
