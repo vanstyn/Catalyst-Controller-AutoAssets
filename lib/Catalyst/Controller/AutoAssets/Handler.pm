@@ -22,6 +22,7 @@ use Catalyst::Utils;
 use Time::HiRes qw(gettimeofday tv_interval);
 use Storable qw(store retrieve);
 use Try::Tiny;
+use Data::Dumper::Concise 'Dumper';
 
 require Digest::SHA1;
 require MIME::Types;
@@ -30,11 +31,17 @@ require Module::Runtime;
 has 'Controller' => (
   is => 'ro', required => 1,
   isa => 'Catalyst::Controller::AutoAssets',
-  handles => [qw(type _app action_namespace unknown_asset)],
+  handles => [qw(type _app action_namespace unknown_asset _build_params _module_version)],
 );
 
 # Directories to include
-has 'include', is => 'ro', isa => 'Str|ArrayRef[Str]', required => 1;  
+has 'include', is => 'ro', isa => 'Str|ArrayRef[Str]', required => 1;
+
+# Optional regex to require files to match to be included
+has 'include_regex', is => 'ro', isa => 'Maybe[Str]', default => undef;
+
+# Optional regex to exclude files
+has 'exclude_regex', is => 'ro', isa => 'Maybe[Str]', default => undef;
 
 # Whether or not to make the current asset available via 307 redirect to the
 # real, current checksum/fingerprint asset path
@@ -108,10 +115,6 @@ sub is_current_request_arg {
 
 sub current_request  {
   my ( $self, $c, $arg, @args ) = @_;
-
-  my $path = $self->_valid_subpath($c,@args);
-  $self->prepare_asset($path);
-
   $c->response->header( 'Cache-Control' => 'no-cache' );
   $c->response->redirect(join('/',$self->asset_path,@args), 307);
   return $c->detach;
@@ -161,7 +164,9 @@ has 'includes', is => 'ro', isa => 'ArrayRef', lazy => 1, default => sub {
   } @list ];
 };
 
-sub get_include_files { 
+
+
+sub get_include_files {
   my $self = shift;
   
   my @files = ();
@@ -172,17 +177,40 @@ sub get_include_files {
         depthfirst => 1,
         callback => sub {
           my $child = shift;
-          push @files, $child->absolute unless ($child->is_dir);
+          push @files, $child->absolute if ($self->_valid_include_file($child));
         }
       );
     }
     else {
-      push @files, $inc;
+      push @files, $inc if ($self->_valid_include_file($inc));
     }
   }
   
   # force consistent ordering of files:
   return [sort @files];
+}
+
+
+has '_include_regexp', is => 'ro', isa => 'Maybe[RegexpRef]', 
+ lazy => 1, init_arg => undef, default => sub {
+   my $self = shift;
+   my $str = $self->include_regex or return undef;
+   return qr/$str/;
+};
+has '_exclude_regexp', is => 'ro', isa => 'Maybe[RegexpRef]', 
+ lazy => 1, init_arg => undef, default => sub {
+   my $self = shift;
+   my $str = $self->exclude_regex or return undef;
+   return qr/$str/;
+};
+
+sub _valid_include_file {
+  my ($self, $file) = @_;
+  return (
+    $file->is_dir
+    || ($self->include_regex && ! $file =~ $self->_include_regexp)
+    || ($self->exclude_regex && $file =~ $self->_exclude_regexp)
+  ) ? 0 : 1;
 }
 
 has 'last_fingerprint_calculated', is => 'rw', isa => 'Maybe[Int]', default => sub{undef};
@@ -256,6 +284,8 @@ sub _persist_state {
   my $self = shift;
   return undef unless ($self->persist_state);
   my $data = { map { $_ => $self->$_ } @{$self->_persist_attrs} };
+  $data->{_module_version} = $self->_module_version;
+  $data->{_build_params} = $self->_build_params;
   store $data, $self->persist_state_file;
   return $data;
 }
@@ -266,7 +296,9 @@ sub _restore_state {
   my $data;
   try {
     $data = retrieve $self->persist_state_file;
-    $self->$_($data->{$_}) for (@{$self->_persist_attrs});
+    if($self->_valid_state_data($data)) {
+      $self->$_($data->{$_}) for (@{$self->_persist_attrs});
+    }
   }
   catch {
     $self->clear_asset; #<-- make sure no partial state data is used
@@ -275,6 +307,16 @@ sub _restore_state {
     );
   };
   return $data;
+}
+
+sub _valid_state_data {
+  my ($self, $data) = @_;
+  
+  # Make sure the version and config params hasn't changed
+  return (
+    $self->_module_version eq $data->{_module_version}
+    && Dumper($self->_build_params) eq Dumper($data->{_build_params})
+  ) ? 1 : 0;
 }
 # -----
 

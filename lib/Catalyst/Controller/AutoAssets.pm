@@ -12,6 +12,8 @@ BEGIN { extends 'Catalyst::Controller' }
 
 has 'type', is => 'ro', isa => 'Str', required => 1;
 
+has '_module_version', is => 'ro', isa => 'Str', default => $VERSION;
+
 # Save the build params (passed to constructor)
 has '_build_params', is => 'ro', isa => 'HashRef', required => 1;
 around BUILDARGS => sub {
@@ -32,7 +34,7 @@ has '_Handler' => (
     my $class = $self->_resolve_handler_class($self->type);
     return $class->new({
       %{$self->_build_params},
-      _Controller => $self
+      Controller => $self
     });
   }
 );
@@ -227,6 +229,14 @@ For C<Directory> type this must be exactly one directory, while for C<CSS> and C
 be a list of directories. The C<include> directory becomes the root of the files hosted as-is
 for the C<Directory> type, while for C<CSS> and C<JS> asset types it is the include files 
 concatinated together (and possibly minified) to be served as the single file.
+
+=head2 include_regex
+
+# Optional regex ($string) to require files to match to be included.
+
+=head2 exclude_regex
+
+# Optional regex ($string) to use to exclude files from the includes.
 
 =head2 current_redirect
 
