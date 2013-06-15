@@ -5,7 +5,8 @@ use warnings;
 use FindBin '$Bin';
 use lib "$Bin/lib";
 
-my $work_dir = "$Bin/var/tmp/work_dir";
+use Path::Class 0.32 qw( dir file );
+my $work_dir = dir("$Bin/var/tmp/work_dir");
 
 {
   package TestApp;

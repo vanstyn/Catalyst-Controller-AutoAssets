@@ -9,7 +9,8 @@ use Test::More;
 eval "use JavaScript::Minifier";
 plan skip_all => "JavaScript::Minifier required for testing minify" if $@;
 
-my $work_dir = "$Bin/var/tmp/work_dir";
+use Path::Class 0.32 qw( dir file );
+my $work_dir = dir("$Bin/var/tmp/work_dir");
 
 {
   package TestApp;
