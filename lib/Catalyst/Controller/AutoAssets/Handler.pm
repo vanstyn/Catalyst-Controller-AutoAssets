@@ -7,9 +7,6 @@ use warnings;
 use Moose::Role;
 use namespace::autoclean;
 
-# REMOVE
-use RapidApp::Include qw(sugar perlutil);
-
 requires qw(
   asset_request
   write_built_file
@@ -42,6 +39,9 @@ has 'include_regex', is => 'ro', isa => 'Maybe[Str]', default => undef;
 
 # Optional regex to exclude files
 has 'exclude_regex', is => 'ro', isa => 'Maybe[Str]', default => undef;
+
+# Whether or not to use qr/$regex/i or qr/$regex/
+has 'regex_ignore_case', is => 'ro', isa => 'Bool', default => 0;
 
 # Whether or not to make the current asset available via 307 redirect to the
 # real, current checksum/fingerprint asset path
@@ -166,9 +166,11 @@ has 'includes', is => 'ro', isa => 'ArrayRef', lazy => 1, default => sub {
 
 
 
+
 sub get_include_files {
   my $self = shift;
   
+  my @excluded = ();
   my @files = ();
   for my $inc (@{$self->includes}) {
     if($inc->is_dir) {
@@ -177,38 +179,48 @@ sub get_include_files {
         depthfirst => 1,
         callback => sub {
           my $child = shift;
-          push @files, $child->absolute if ($self->_valid_include_file($child));
+          $self->_valid_include_file($child)
+            ? push @files, $child->absolute
+            : push @excluded, $child->absolute;
         }
       );
     }
     else {
-      push @files, $inc if ($self->_valid_include_file($inc));
+      $self->_valid_include_file($inc) 
+        ? push @files, $inc->absolute 
+        : push @excluded, $inc->absolute;
     }
   }
+  
+  # Some handlers (like Directory) need to know about excluded files
+  $self->_record_excluded_files(\@excluded);
   
   # force consistent ordering of files:
   return [sort @files];
 }
+
+# optional hook for excluded files:
+sub _record_excluded_files {}
 
 
 has '_include_regexp', is => 'ro', isa => 'Maybe[RegexpRef]', 
  lazy => 1, init_arg => undef, default => sub {
    my $self = shift;
    my $str = $self->include_regex or return undef;
-   return qr/$str/;
+   return $self->regex_ignore_case ? qr/$str/i : qr/$str/;
 };
 has '_exclude_regexp', is => 'ro', isa => 'Maybe[RegexpRef]', 
  lazy => 1, init_arg => undef, default => sub {
    my $self = shift;
    my $str = $self->exclude_regex or return undef;
-   return qr/$str/;
+   return $self->regex_ignore_case ? qr/$str/i : qr/$str/;
 };
 
 sub _valid_include_file {
   my ($self, $file) = @_;
   return (
     $file->is_dir
-    || ($self->include_regex && ! $file =~ $self->_include_regexp)
+    || ($self->include_regex && ! ($file =~ $self->_include_regexp))
     || ($self->exclude_regex && $file =~ $self->_exclude_regexp)
   ) ? 0 : 1;
 }
@@ -448,7 +460,12 @@ sub asset_name { (shift)->current_fingerprint }
 
 sub asset_path {
   my $self = shift;
-  return '/' . $self->action_namespace($self->_app) . '/' . $self->asset_name;
+  return $self->base_path . '/' . $self->asset_name;
+}
+
+sub base_path {
+  my $self = shift;
+  return '/' . $self->action_namespace($self->_app); 
 }
 
 # this is just used for some internal optimization to avoid calling stat

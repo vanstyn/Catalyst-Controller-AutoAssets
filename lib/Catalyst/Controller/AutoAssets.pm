@@ -39,6 +39,15 @@ has '_Handler' => (
   }
 );
 
+# Delegate all other function calls to the Handler to support future
+# Handler classes and new methods
+our $AUTOLOAD;
+sub AUTOLOAD {
+  $AUTOLOAD =~ /([^:]+)$/;
+  eval "sub $1 { (shift)->_Handler->$1(\@_); }";
+  goto $_[0]->can($1);
+}
+
 sub _resolve_handler_class {
 	my $self = shift;
   my $class = shift;
@@ -232,11 +241,18 @@ concatinated together (and possibly minified) to be served as the single file.
 
 =head2 include_regex
 
-# Optional regex ($string) to require files to match to be included.
+Optional regex ($string) to require files to match to be included.
 
 =head2 exclude_regex
 
-# Optional regex ($string) to use to exclude files from the includes.
+Optional regex ($string) to use to exclude files from the includes.
+
+=head2 regex_ignore_case
+
+Whether or not to use case-insensitive regex (qr/$regex/i vs qr/$regex/) when evaluating 
+include_regex/exclude_regex.
+
+Defaults to false (0).
 
 =head2 current_redirect
 

@@ -105,6 +105,7 @@ has '_persist_attrs', is => 'ro', isa => 'ArrayRef', default => sub{[qw(
  inc_mtimes
  last_fingerprint_calculated
  subfile_meta
+ _excluded_paths
 )]};
 
 
@@ -123,6 +124,10 @@ has 'dir_root', is => 'ro', isa => 'Path::Class::Dir', lazy => 1, default => sub
 sub _subfile_mtime_verify {
   my ($self, $path) = @_;
   my $File = $self->dir_root->file($path);
+  
+  # If the file doesn't exist on disk or is in the excluded paths there 
+  # is no need to clear the asset. We already know it will return a 404
+  return ($self->_excluded_paths->{$path} || ! -f $File);
 
   # Check the mtime of the requested file to see if it has changed
   # and force a rebuild if it has. This is done because it is too
@@ -199,6 +204,16 @@ around build_asset => sub {
 
   return $self->$orig($d);
 };
+
+# Keep track of excluded files so we can return a 404 without rebuilding
+# the asset
+has '_excluded_paths', is => 'rw', isa => 'HashRef', default => sub {{}};
+sub _record_excluded_files {
+  my ($self, $files) = @_;
+  my @relative = map { file($_)->relative($self->dir_root) } @$files;
+  my %hash = map { $_ => 1 } map { "$_" } @relative;
+  $self->_excluded_paths(\%hash);
+}
 
 sub write_built_file {
   my ($self, $fd, $files) = @_;
