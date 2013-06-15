@@ -579,6 +579,10 @@ These are the current built in handler classes:
 
 =item L<Catalyst::Controller::AutoAssets::Handler::JS>
 
+=item L<Catalyst::Controller::AutoAssets::Handler::ImageSet>
+
+=item L<Catalyst::Controller::AutoAssets::Handler::IconSet>
+
 =back
 
 =head1 AUTHOR

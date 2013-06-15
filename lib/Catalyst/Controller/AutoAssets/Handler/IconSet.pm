@@ -168,18 +168,17 @@ And in your .tt files:
   
   ...
   
+  <!-- use icon class names in markup -->
   <div class="mycls [% c.controller('Assets::Icons').icon_class('apple.jpg') %]"></div>
   
   <!-- or, in static HTML -->
   <div class="mycls icon-apple"></div>
 
-
-
 =head1 DESCRIPTION
 
 Like the 'ImageSet' asset type but also generates/includes CSS classes for accessing/using icons in HTML
-markup (i.e. with the css style 'background-image'). These icon class names can then be used directly in JavaScript
-frameworks like ExtJS.
+markup (i.e. with the css style C<'background-image'>). These icon class names can then be used in HTML tags
+or directly in JavaScript frameworks like ExtJS.
 
 This class extends L<Catalyst::Controller::AutoAssets::Handler::ImageSet>. Only differences are shown below.
 
@@ -187,11 +186,11 @@ This class extends L<Catalyst::Controller::AutoAssets::Handler::ImageSet>. Only 
 
 =head2 flatten_paths
 
-Inherited from ImageSet, but defaults to true (1).
+Inherited from ImageSet but defaults to true (1).
 
 =head2 icon_name_prefix
 
-String to prepend to the generated css icon class name. Defaults to 'icon-'.
+String to prepend to the generated css icon class name. Defaults to C<'icon-'>.
 
 =head2 lowercase_icon_names
 
@@ -199,7 +198,7 @@ Whether or not to use all lowercase characters in the css icon class name. Defau
 
 =head2 strip_ext_icon_names
 
-Whether or not to strip the file extention from the filename when generating the css class name. 
+Whether or not to strip the file extension from the filename when generating the css class name. 
 Defaults to true (1).
 
 =head2 replace_nonwords_icon_names
@@ -211,20 +210,22 @@ Defaults to true (1).
 
 CodeRef used to generate the css icon class name. Receives ($self, $image_name) as arguments and returns
 the css class name. If this is overridden it will supersede all the above "_icon_names" options. With all 
-the default options, the $image_name 'Brick_House.png' would return the CSS class name 'icon-brick-house'.
+the default options, the $image_name C<'Brick_House.png'> would return the CSS class name C<'icon-brick-house'>.
 
 =head2 css_rule_generator
 
-CodeRef used to generate the actual css rule definition for a given icon class name. icon class name. 
-Receives ($self, $icon_class, $path) as arguments and returns the css rule string. By default, args 'icon-brick-house'
-and 'Brick_House.png' would return '.icon-brick-house { background-image: url(Brick_House.png) !important; }'.
+CodeRef used to generate the actual css rule definition for a given icon class name. 
+Receives ($self, $icon_class, $path) as arguments and returns the css rule string. By default, args C<'icon-brick-house'>
+and C<'Brick_House.png'> would return:
+
+  .icon-brick-house { background-image: url(Brick_House.png) !important; }
 
 =head2 css_file_name
 
 The name of the automatically generated CSS file which will contain the CSS rules for all the icons included in
-the asset. This file is accessible as a subfile path is accessable as an ordinary subfile in the asset.
+the asset. This file is accessible as an ordinary subfile in the asset.
 
-Defaults to 'icons.css'.
+Defaults to C<'icons.css'>.
 
 =head1 METHODS
 
@@ -239,9 +240,13 @@ section. By default this will be:
 
 Returns the generated icon css class name for the supplied icon path/filename.
 
+  [% c.controller('Assets::Icons').icon_class("Brick_House.png") %] # 'icon-brick-house'
+
 =head1 SEE ALSO
 
 =over
+
+=item L<Catalyst::Controller::AutoAssets>
 
 =item L<Catalyst::Controller::AutoAssets::Handler::ImageSet>
 

@@ -166,18 +166,18 @@ This class extends L<Catalyst::Controller::AutoAssets::Handler::Directory>. Only
 
 Optional regex ($string) to require files to match to be included.
 
-Defaults to '\.(png|jpg|jpeg|gif|bmp|tif|tiff)$'
+Defaults to C<'\.(png|jpg|jpeg|gif|bmp|tif|tiff)$'>
 
 =head2 regex_ignore_case
 
-Whether or not to use case-insensitive regex (qr/$regex/i vs qr/$regex/) when evaluating 
+Whether or not to use case-insensitive regex (C<qr/$regex/i> vs C<qr/$regex/>) when evaluating 
 include_regex/exclude_regex.
 
 Defaults to true (1).
 
 =head2 flatten_paths
 
-Whether or not to convert paths to filenames (i.e. 'path/to/apple.jpg' becomes 'apple.jpg') for shorter
+Whether or not to convert paths to filenames (i.e. C<'path/to/apple.jpg'> becomes C<'apple.jpg'>) for shorter
 and easier names. Duplicate filenames ignored (only the first will be used) with a warning in the log.
 
 Defaults to false (0).
@@ -201,9 +201,13 @@ Dumps img tags for every image in the asset
 
 =over
 
+=item L<Catalyst::Controller::AutoAssets>
+
 =item L<Catalyst::Controller::AutoAssets::Handler>
 
 =item L<Catalyst::Controller::AutoAssets::Handler::Directory>
+
+=item L<Catalyst::Controller::AutoAssets::Handler::IconSet>
 
 =back
 

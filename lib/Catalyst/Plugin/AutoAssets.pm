@@ -2,7 +2,7 @@ package Catalyst::Plugin::AutoAssets;
 use strict;
 use warnings;
 
-our $VERSION = 0.19;
+our $VERSION = 0.20;
 
 use Moose::Role;
 use namespace::autoclean;
@@ -70,11 +70,7 @@ __END__
 
 =head1 NAME
 
-Catalyst::Plugin::AutoAssets - Plugin interface to Catalyst::Controller::AutoAssets
-
-=head1 VERSION
-
-version 0.11
+Catalyst::Plugin::AutoAssets - Plugin interface to L<Catalyst::Controller::AutoAssets>
 
 =head1 SYNOPSIS
 
@@ -120,10 +116,22 @@ version 0.11
           type => 'CSS',
           include => '/path/to/css',
           minify => 1
+        },
+        {
+          controller => 'Assets::Icons',
+          type => 'IconSet',
+          include => 'root/static/icons'
         }
       ]
     }
   );
+
+Optionally, within .tt files:
+
+  <head>
+    <!-- all html includes from all assets at once -->
+    [% c.all_html_head_tags %]
+  </head>
 
 =head1 DESCRIPTION
 
@@ -152,6 +160,15 @@ See the SYNOPSIS above for examples of both.
 =head2 all_html_head_tags
 
 Convenience method concats the output of C<html_head_tags()> from all the AutoAssets controllers at once.
+
+=head1 SEE ALSO
+
+=over
+
+=item L<Catalyst::Controller::AutoAssets>
+
+=back
+
 
 =head1 AUTHOR
 

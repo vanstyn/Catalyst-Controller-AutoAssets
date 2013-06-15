@@ -2,7 +2,7 @@ package Catalyst::Controller::AutoAssets;
 use strict;
 use warnings;
 
-our $VERSION = 0.19;
+our $VERSION = 0.20;
 
 use Moose;
 use namespace::autoclean;
@@ -144,39 +144,44 @@ Or, in static HTML:
 =head1 PLUGIN INTERFACE
 
 A Catalyst Plugin interface is also available for easy setup of multiple asset controllers at once. See
-L<Catalyst::Plugin::AutoAssets>.
+
+=over
+
+=item L<Catalyst::Plugin::AutoAssets>
+
+=back
 
 =head1 DESCRIPTION
 
-Fast, convenient and extendable serving of assets (CSS, JavaScript, etc) at URL path(s) containing sha1 
+Fast, convenient and extendable serving of assets (CSS, JavaScript, Images, etc) at URL path(s) containing sha1 
 checksums. This is an alternative/supplement to L<Catalyst::Plugin::Static::Simple> or
 external/webserver for serving of an application's "nearly static" content.
 
 The benefit of serving files through CAS paths ("content-addressable storage" - same design used by Git) 
-is that it automatically alleviates client caching issues while simulataneously taking advantage of 
+is that it automatically alleviates client caching issues while simultaneously taking advantage of 
 maximum aggressive HTTP cache settings. Because URL paths contain the sha1 checksum of the data, 
 browsers can safely cache the content forever because "changes" automatically become new URLs. 
 If the content (CSS, JavaScript or other) is modified later on, the client browsers instantly 
 see the new version.
 
 This is particularly useful when deploying new versions of an application where client browsers
-out in the network might have cached CSS and JavaScript from previous versions. Instead of asking 
+out in the network might have cached CSS, JavaScript and Images from previous versions. Instead of asking 
 users to hit "F5", everyone gets the new content automagically, with no intervention required (and no
-sporadically broken user experiences when you forget to plan for browser caches).
+sporadically broken user experiences when you forget to plan for cached data).
 All you have to do is change the content; the module handles the rest.
 
 This module also provides some optional extra features that are useful in both development and
-production environments for automatically managing, minifying and deploying CSS and JavaScript assets.
+production environments for automatically managing, minifying and deploying CSS, JavaScript, Image and Icon assets.
 
 =head1 PERFORMANCE
 
 Besides the performance benefits of aggressive HTTP caching (which can be significant, depending of the
-ratio of first-time visitors to returning visitors) this module has also been optimized to serve the requests
-it does receive as fast as possible. On typical requests, all that happens besides returning the content from
-disk is one extra file stat and comparison of mtime. So, even with it's real-time checksums, this module is
-essentially identical to L<Catalyst::Plugin::Static::Simple> from a performance perspective (and, unlike 
-Static::Simple, this module caches guessed Content-Types instead of doing it on every request, so it
-might even be faster).
+ratio of first-time visitors to returning visitors) this module has also been optimized to serve requests
+ as fast as possible. On typical requests, all that happens besides returning the content from
+disk is one extra file stat and comparison of mtime. So, even with it's real-time content-change tracking and
+checksums, this module is essentially identical to L<Catalyst::Plugin::Static::Simple> from a performance 
+perspective (and may even be slightly faster because it caches guessed Content-Types instead of calculating on every
+request like Static::Simple).
 
 =head2 When to use this module
 
@@ -192,14 +197,22 @@ unique (i.e. little benefit from HTTP caching), or where the scale is large enou
 increase in speed of serving static content directly from the web server (like Apache), instead of through Catalyst,
 is worth manually - and correctly - doing all the things that this module does automatically. Unless you are carefully
 planning your HTTP caching strategy (such configuring Apache's cache settings) and coordinating all this with
-with content changes/new releases, this module is likely to outperform your manual setup.
+content changes/new releases, this module is likely to outperform your manual setup.
 
+=head1 HANDLERS
+
+Note: All config params and methods described below are actually delegated to the type handler specified in 'type' and some are
+specific (as noted below). For convenience, the core handlers C<Directory>, C<CSS> and C<JS> are documented below but others
+are available (and custom handlers can also be written). To see other available type handlers and for information on writing 
+custom handlers see:
+
+=over
+
+=item L<Catalyst::Controller::AutoAssets::Handler>
+
+=back
 
 =head1 CONFIG PARAMS
-
-Note: All config params and methods are actually delegated to the Type Handler specified in 'type' and some are
-specific (as noted below). For more information and details on writing custom Type Handlers see
-L<Catalyst::Controller::AutoAssets::Handler>.
 
 =head2 type
 
@@ -237,7 +250,7 @@ B<Required> - String or ArrayRef. The path(s) on the local filesystem containing
 For C<Directory> type this must be exactly one directory, while for C<CSS> and C<JS> it can
 be a list of directories. The C<include> directory becomes the root of the files hosted as-is
 for the C<Directory> type, while for C<CSS> and C<JS> asset types it is the include files 
-concatinated together (and possibly minified) to be served as the single file.
+concatenated together (and possibly minified) to be served as the single file.
 
 =head2 include_regex
 
@@ -293,11 +306,11 @@ Whether or not to make the current asset available directly via a static path ('
 current_redirect except the asset is served directly. This is essentially only useful for debug purposes
 as it will make no use of caching.
 
+Defaults to false (0).
+
 =head2 static_alias
 
 Alias to use for static requests if C<allow_static_requests> is enabled. Defaults to 'static'.
-
-Defaults to false (0).
 
 =head2 minify
 
@@ -429,6 +442,8 @@ This will be refactored/generalized in a later version.
 =head1 SEE ALSO
 
 =over
+
+=item L<Catalyst::Plugin::AutoAssets>
 
 =item L<Catalyst::Plugin::Assets>
 
