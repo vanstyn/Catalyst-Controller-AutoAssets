@@ -287,6 +287,18 @@ Defaults to true (1).
 Alias to use for the C<current_redirect>. Defaults to 'current' (which also implies 'current.js'/'current.css'
 for C<JS> and C<CSS> asset types).
 
+=head2 allow_static_requests
+
+Whether or not to make the current asset available directly via a static path ('/static/'). This is like
+current_redirect except the asset is served directly. This is essentially only useful for debug purposes
+as it will make no use of caching.
+
+=head2 static_alias
+
+Alias to use for static requests if C<allow_static_requests> is enabled. Defaults to 'static'.
+
+Defaults to false (0).
+
 =head2 minify
 
 Whether or not to attempt to minify content for C<CSS> or C<JS> asset types. This is a purely optional

@@ -35,13 +35,18 @@ sub asset_request {
   );
 
   my $meta = $self->subfile_meta->{$path};
+  return $self->_set_file_response($c,$meta->{file},$meta->{content_type});
+}
 
+sub _set_file_response {
+  my ($self, $c, $file, $content_type) = @_;
+  
   $c->response->header(
-    'Content-Type' => $meta->{content_type},
+    'Content-Type' => $content_type,
     'Cache-Control' => $self->cache_control_header
   );
 
-  return $c->response->body( $meta->{file}->openr );
+  return $c->response->body( $file->openr );
 }
 
 

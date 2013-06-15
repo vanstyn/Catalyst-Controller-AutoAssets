@@ -45,10 +45,17 @@ has 'regex_ignore_case', is => 'ro', isa => 'Bool', default => 0;
 
 # Whether or not to make the current asset available via 307 redirect to the
 # real, current checksum/fingerprint asset path
-has 'current_redirect', is => 'ro', isa => 'Bool', default => sub{1};
+has 'current_redirect', is => 'ro', isa => 'Bool', default => 1;
 
 # What string to use for the 'current' redirect
-has 'current_alias', is => 'ro', isa => 'Str', default => sub { 'current' };
+has 'current_alias', is => 'ro', isa => 'Str', default => 'current';
+
+# Whether or not to make the current asset available via a static path
+# with no benefit of caching
+has 'allow_static_requests', is => 'ro', isa => 'Bool', default => 0;
+
+# What string to use for the 'static' path
+has 'static_alias', is => 'ro', isa => 'Str', default => 'static';
 
 # Max number of seconds before recalculating the fingerprint (sha1 checksum)
 # regardless of whether or not the mtime has changed. 0 means infinite/disabled
@@ -103,20 +110,41 @@ before BUILD => sub {
 # Main code entry point:
 sub request {
   my ( $self, $c, @args ) = @_;
+  my $sha1 = $args[0];
   
-  return $self->current_request($c, @args) if $self->is_current_request_arg(@args);
-  return $self->asset_request($c,@args);
-}
-
-sub is_current_request_arg {
-  my ($self, $arg) = @_;
-  return $arg eq $self->current_alias ? 1 : 0;
+  return $self->current_request($c, @args) if (
+    $self->current_redirect
+    && $self->current_alias eq $sha1
+  );
+  
+  return $self->static_request($c, @args) if (
+    $self->allow_static_requests
+    && $self->static_alias eq $sha1
+  );
+  
+  $self->asset_request($c, @args);
+  return $c->detach;
 }
 
 sub current_request  {
   my ( $self, $c, $arg, @args ) = @_;
   $c->response->header( 'Cache-Control' => 'no-cache' );
   $c->response->redirect(join('/',$self->asset_path,@args), 307);
+  return $c->detach;
+}
+
+sub static_request  {
+  my ( $self, $c, $arg, @args ) = @_;
+  
+  # Simulate a request to the current sha1 checksum:
+  $self->prepare_asset(@args);
+  my $sha1 = $self->asset_name;
+  $self->asset_request($c, $sha1, @args);
+  
+  # Important: change the Cache-Control header because this URL is
+  # does *not* contain the checksum:
+  $c->response->header( 'Cache-Control' => 'no-cache' );
+
   return $c->detach;
 }
 
@@ -374,8 +402,8 @@ sub prepare_asset {
   # Optional hook:
   $self->before_prepare_asset(@_);
 
-  my $d = $self->get_prepare_data;
-  return 1 unless $self->_build_required($d);
+  my $opt = $self->get_prepare_data;
+  return 1 unless $self->_build_required($opt);
 
   ####  -----
   ####  The code above this line happens on every request and is designed
@@ -392,27 +420,17 @@ sub prepare_asset {
   $self->get_build_lock;
   # ---
   
-  $self->build_asset($d);
-
-  # Update the fingerprint (global) and cached mtimes (specific to the current process)
-  $self->inc_mtimes($d->{inc_mtimes});
-  $self->built_mtime($self->get_built_mtime);
-  # we're calculating the fingerprint again because the built_file, which was just
-  # regenerated, is included in the checksum data. This could probably be optimized,
-  # however, this only happens on rebuild which rarely happens (should never happen)
-  # in production so an extra second is no big deal in this case.
-  $self->calculate_save_fingerprint($d->{files});
-
+  $self->build_asset($opt);
+  
   $self->_app->log->info(
-    "Built asset: " . $self->asset_path .
+    "Built asset: " . $self->base_path . '/' . $self->asset_name .
     ' in ' . sprintf("%.3f", tv_interval($start) ) . 's'
-   );
+  );
 
   # Release the lock and return:
   $self->_persist_state;
   return $self->release_build_lock;
 }
-
 
 sub build_asset {
   my ($self, $opt) = @_;
@@ -440,6 +458,15 @@ sub build_asset {
   my $fd = $self->built_file->openw or die $!;
   $self->write_built_file($fd,$files);
   $fd->close;
+  
+  # Update the fingerprint (global) and cached mtimes (specific to the current process)
+  $self->inc_mtimes($opt->{inc_mtimes});
+  $self->built_mtime($self->get_built_mtime);
+  # we're calculating the fingerprint again because the built_file, which was just
+  # regenerated, is included in the checksum data. This could probably be optimized,
+  # however, this only happens on rebuild which rarely happens (should never happen)
+  # in production so an extra second is no big deal in this case.
+  $self->calculate_save_fingerprint($opt->{files});
 }
 
 sub file_checksum {
@@ -458,11 +485,6 @@ sub file_checksum {
 
 sub asset_name { (shift)->current_fingerprint }
 
-sub asset_path {
-  my $self = shift;
-  return $self->base_path . '/' . $self->asset_name;
-}
-
 sub base_path {
   my $self = shift;
   return '/' . $self->action_namespace($self->_app); 
@@ -476,6 +498,10 @@ before asset_path => sub {
   my $self = shift;
   $self->prepare_asset(@_) unless ($self->_asset_path_skip_prepare);
 };
+sub asset_path {
+  my $self = shift;
+  return $self->base_path . '/' . $self->asset_name;
+}
 
 sub html_head_tags { undef }
 

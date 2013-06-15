@@ -130,7 +130,7 @@ Catalyst::Controller::AutoAssets::Handler::ImageSet - ImageSet type handler
 
 In your controller:
 
-  package MyApp::Controller::Assets::MyCSS;
+  package MyApp::Controller::Assets::MyImages;
   use parent 'Catalyst::Controller::AutoAssets';
   
   1;
@@ -146,7 +146,7 @@ Then, in your .conf:
 
 And in your .tt files:
 
-  [% c.controller('Assets::MyCSS').img_tag('foo.png') %]
+  [% c.controller('Assets::MyImages').img_tag('foo.png') %]
   
   <img src="[% c.controller('Assets::MyImages').asset_path('apple.jpg') %]">
 
