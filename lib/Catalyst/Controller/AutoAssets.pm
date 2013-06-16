@@ -102,10 +102,6 @@ __END__
 
 Catalyst::Controller::AutoAssets - Automatic asset serving via sha1-based URLs
 
-=head1 VERSION
-
-version 0.19
-
 =head1 SYNOPSIS
 
 In your controller:
