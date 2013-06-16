@@ -12,6 +12,7 @@ requires qw(
   write_built_file
 );
 
+use Cwd;
 use Path::Class 0.32 qw( dir file );
 use Fcntl qw( :DEFAULT :flock :seek F_GETFL );
 use File::stat qw(stat);
@@ -75,8 +76,13 @@ has 'sha1_string_length', is => 'ro', isa => 'Int', default => sub{40};
 
 # directory to use for relative includes (defaults to the Catalyst home dir);
 # TODO: coerce from Str
-has 'include_relative_dir', isa => 'Path::Class::Dir', is => 'ro', lazy => 1,
-  default => sub { dir( (shift)->_app->config->{home} )->resolve };
+has 'include_relative_dir', isa => 'Path::Class::Dir', is => 'ro', lazy => 1, default => sub { 
+  my $self = shift;
+  my $home = $self->_app->config->{home};
+  $home = $home && -d $home ? $self->_app->config->{home} : cwd();
+  return dir( $home );
+};
+
 
 
 ######################################
@@ -102,7 +108,8 @@ before BUILD => sub {
     unless ($self->sha1_string_length >= 5 && $self->sha1_string_length <= 40);
 
   # init work_dir:
-  $self->work_dir;
+  $self->work_dir->mkpath($self->_app->debug);
+  $self->work_dir->resolve;
   
   $self->prepare_asset;
 };
@@ -113,8 +120,7 @@ sub request {
   my $sha1 = $args[0];
   
   return $self->current_request($c, @args) if (
-    $self->current_redirect
-    && $self->current_alias eq $sha1
+    $self->is_current_request_arg(@args)
   );
   
   return $self->static_request($c, @args) if (
@@ -124,6 +130,11 @@ sub request {
   
   $self->asset_request($c, @args);
   return $c->detach;
+}
+
+sub is_current_request_arg {
+  my ($self, $arg) = @_;
+  return $arg eq $self->current_alias ? 1 : 0;
 }
 
 sub current_request  {
@@ -159,9 +170,7 @@ has 'work_dir', is => 'ro', isa => 'Path::Class::Dir', lazy => 1, default => sub
   my $tmpdir = Catalyst::Utils::class2tempdir($c)
     || Catalyst::Exception->throw("Can't determine tempdir for $c");
     
-  my $dir = dir($tmpdir, "AutoAssets",  $self->action_namespace($c));
-  $dir->mkpath($self->_app->debug);
-  return $dir->resolve;
+  return dir($tmpdir, "AutoAssets",  $self->action_namespace($c));
 };
 
 has 'built_file', is => 'ro', isa => 'Path::Class::File', lazy => 1, default => sub {

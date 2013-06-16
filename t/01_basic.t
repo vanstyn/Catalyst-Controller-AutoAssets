@@ -33,7 +33,7 @@ use Test::More;
 use Catalyst::Test 'TestApp';
 
 action_ok(
-  '/assets/5fc09bfcb5ab7637fce05dbeec7ec1f2388aeccf.css',
+  '/assets/fa7fa28ff238535ba564c1a41755bde48844deef.css',
   "Expected built asset SHA-1 path"
 );
 
@@ -48,7 +48,7 @@ action_ok(
 );
 
 contenttype_is(
-  '/assets/5fc09bfcb5ab7637fce05dbeec7ec1f2388aeccf.css',
+  '/assets/fa7fa28ff238535ba564c1a41755bde48844deef.css',
   'text/css',
   "Expected CSS Content-Type"
 );
