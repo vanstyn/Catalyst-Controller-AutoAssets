@@ -446,7 +446,7 @@ sub build_asset {
   
   my $files = $opt->{files} || $self->get_include_files;
   my $inc_mtimes = $opt->{inc_mtimes} || $self->get_inc_mtime_concat($files);
-  my $built_mtime = $opt->{inc_mtimes} || $self->get_built_mtime;
+  my $built_mtime = $opt->{built_mtime} || $self->get_built_mtime;
   
   # Check the fingerprint to see if we can avoid a full rebuild (if mtimes changed
   # but the actual content hasn't by comparing the fingerprint/checksum):
