@@ -42,7 +42,7 @@ sub asset_request {
   my ( $self, $c, @args ) = @_;
   my $want_asset = join('/',@args);
 
-  $self->prepare_asset;
+  #$self->prepare_asset;
 
   return $self->unknown_asset($c,$want_asset) unless ($self->asset_name eq $want_asset);
   

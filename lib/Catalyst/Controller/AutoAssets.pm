@@ -302,6 +302,8 @@ Whether or not to make the current asset available directly via a static path ('
 current_redirect except the asset is served directly. This is essentially only useful for debug purposes
 as it will make no use of caching.
 
+See also 'use_etags' below.
+
 Defaults to false (0).
 
 =head2 current_response_headers
@@ -321,6 +323,21 @@ Extra headers to set in the response for 'static' requests. Cache-Control => 'no
 it is overridden here.
 
 Defaults to empty HashRef {}
+
+=head2 use_etags
+
+Whether or not to set 'Etag' ("Entity Tag") HTTP response headers and check 'If-None-Match' client request headers to return
+HTTP/304 'Not Modified' responses to clients that already have the current version of the requested asset/file.
+This is essentially the same default behavior as Apache.
+
+Etags provide another content-based mechanism (built into HTTP 1.1) for cache validation. This module accomplishes
+even better cache validation than Etags because it avoids the validation request needed to check the current Etag in the first place,
+however, Etag functionality has also been included because it is very useful when enabling and using 'static' paths which
+do not make use of the checksum in the URL. Also, when Etags are present, most browsers will use them even when hitting 
+"F5" to manually reload the page to avoid downloading the content again, so this feature further increases performance
+for the F5 use-case which many users may be in the habit of doing for various legit reasons.
+
+Defaults to false (0).
 
 =head2 minify
 
@@ -448,14 +465,6 @@ type.
 
 Does not currently work on all Windows platforms because of the file locking code.
 This will be refactored/generalized in a later version.
-
-=head1 TODO
-
-=over
-
-=item Generate and handle Etags
-
-=back
 
 =head1 SEE ALSO
 

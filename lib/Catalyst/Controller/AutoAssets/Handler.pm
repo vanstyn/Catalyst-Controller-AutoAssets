@@ -62,6 +62,10 @@ has 'static_alias', is => 'ro', isa => 'Str', default => 'static';
 has 'current_response_headers', is => 'ro', isa => 'HashRef', default => sub {{}};
 has 'static_response_headers', is => 'ro', isa => 'HashRef', default => sub {{}};
 
+# Whether or not to set 'Etag' response headers and check 'If-None-Match' request headers
+# Very useful when using 'static' paths
+has 'use_etags', is => 'ro', isa => 'Bool', default => 0;
+
 # Max number of seconds before recalculating the fingerprint (sha1 checksum)
 # regardless of whether or not the mtime has changed. 0 means infinite/disabled
 has 'max_fingerprint_calc_age', is => 'ro', isa => 'Int', default => sub {0};
@@ -132,8 +136,7 @@ sub request {
     && $self->static_alias eq $sha1
   );
   
-  $self->asset_request($c, @args);
-  return $c->detach;
+  return $self->handle_asset_request($c, @args);
 }
 
 sub is_current_request_arg {
@@ -152,21 +155,41 @@ sub current_request  {
 sub static_request  {
   my ( $self, $c, $arg, @args ) = @_;
   
-  # Simulate a request to the current sha1 checksum:
-  $self->prepare_asset(@args);
-  my $sha1 = $self->asset_name;
-  
-  # TODO: add Etag handling here
-  
-  
-  $self->asset_request($c, $sha1, @args);
-  
-  # Important: change the Cache-Control header because this URL is
-  # does *not* contain the checksum:
   $c->response->header('Cache-Control' => 'no-cache');
   $c->response->header(%{$self->static_response_headers});
+  
+  # Simulate a request to the current sha1 checksum:
+  return $self->handle_asset_request($c, $self->asset_name, @args);
+}
 
+
+sub handle_asset_request {
+  my ( $self, $c, $arg, @args ) = @_;
+  
+  $self->prepare_asset(@args);
+  
+  if($self->use_etags && $self->client_current_etag($c, $arg, @args)) {
+    # Set 304 Not Modified:
+    $c->response->status(304);
+  }
+  else {
+    $self->asset_request($c, $arg, @args);
+  }
   return $c->detach;
+}
+
+sub client_current_etag {
+  my ( $self, $c, $arg, @args ) = @_;
+  
+  my $etag = $self->etag_value(@args);
+  $c->response->header( Etag => $etag );
+  my $client_etag = $c->request->headers->{'if-none-match'};
+  return ($client_etag && $client_etag eq $etag) ? 1 : 0;
+}
+
+sub etag_value {
+  my $self = shift;
+  return '"' . join('/',$self->asset_name,@_) . '"';
 }
 
 

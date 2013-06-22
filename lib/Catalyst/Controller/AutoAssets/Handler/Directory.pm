@@ -23,7 +23,7 @@ sub BUILD {
 sub asset_request {
   my ( $self, $c, $sha1, @args ) = @_;
   
-  # Only subfiles are valid with Directory asets:
+  # Only subfiles are valid with Directory assets:
   return $self->unknown_asset($c) unless (scalar @args > 0);
   
   my $path = join('/',@args);
