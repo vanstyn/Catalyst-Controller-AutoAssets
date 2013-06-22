@@ -58,6 +58,10 @@ has 'allow_static_requests', is => 'ro', isa => 'Bool', default => 0;
 # What string to use for the 'static' path
 has 'static_alias', is => 'ro', isa => 'Str', default => 'static';
 
+# Extra custom response headers for current/static requests 
+has 'current_response_headers', is => 'ro', isa => 'HashRef', default => sub {{}};
+has 'static_response_headers', is => 'ro', isa => 'HashRef', default => sub {{}};
+
 # Max number of seconds before recalculating the fingerprint (sha1 checksum)
 # regardless of whether or not the mtime has changed. 0 means infinite/disabled
 has 'max_fingerprint_calc_age', is => 'ro', isa => 'Int', default => sub {0};
@@ -139,7 +143,8 @@ sub is_current_request_arg {
 
 sub current_request  {
   my ( $self, $c, $arg, @args ) = @_;
-  $c->response->header( 'Cache-Control' => 'no-cache' );
+  $c->response->header('Cache-Control' => 'no-cache');
+  $c->response->header(%{$self->current_response_headers});
   $c->response->redirect(join('/',$self->asset_path,@args), 307);
   return $c->detach;
 }
@@ -150,11 +155,16 @@ sub static_request  {
   # Simulate a request to the current sha1 checksum:
   $self->prepare_asset(@args);
   my $sha1 = $self->asset_name;
+  
+  # TODO: add Etag handling here
+  
+  
   $self->asset_request($c, $sha1, @args);
   
   # Important: change the Cache-Control header because this URL is
   # does *not* contain the checksum:
-  $c->response->header( 'Cache-Control' => 'no-cache' );
+  $c->response->header('Cache-Control' => 'no-cache');
+  $c->response->header(%{$self->static_response_headers});
 
   return $c->detach;
 }
@@ -380,6 +390,7 @@ sub _build_required {
   my ($self, $d) = @_;
   return (
     $self->inc_mtimes && $self->built_mtime &&
+    $d->{inc_mtimes} && $d->{built_mtime} &&
     $self->inc_mtimes eq $d->{inc_mtimes} &&
     $self->built_mtime eq $d->{built_mtime} &&
     $self->fingerprint_calc_current
@@ -463,7 +474,7 @@ sub build_asset {
   }
 
   ### Ok, we really need to do a full rebuild:
-  
+
   my $fd = $self->built_file->openw or die $!;
   $self->write_built_file($fd,$files);
   $fd->close;

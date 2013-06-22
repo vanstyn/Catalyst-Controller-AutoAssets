@@ -2,7 +2,7 @@ package Catalyst::Controller::AutoAssets;
 use strict;
 use warnings;
 
-our $VERSION = 0.20;
+our $VERSION = 0.21;
 
 use Moose;
 use namespace::autoclean;
@@ -304,9 +304,23 @@ as it will make no use of caching.
 
 Defaults to false (0).
 
+=head2 current_response_headers
+
+Extra headers to set in the response for 'current' requests. Cache-Control => 'no-cache' is always set unless
+it is overridden here.
+
+Defaults to empty HashRef {}
+
 =head2 static_alias
 
 Alias to use for static requests if C<allow_static_requests> is enabled. Defaults to 'static'.
+
+=head2 static_response_headers
+
+Extra headers to set in the response for 'static' requests. Cache-Control => 'no-cache' is always set unless
+it is overridden here.
+
+Defaults to empty HashRef {}
 
 =head2 minify
 
@@ -434,6 +448,14 @@ type.
 
 Does not currently work on all Windows platforms because of the file locking code.
 This will be refactored/generalized in a later version.
+
+=head1 TODO
+
+=over
+
+=item Generate and handle Etags
+
+=back
 
 =head1 SEE ALSO
 
