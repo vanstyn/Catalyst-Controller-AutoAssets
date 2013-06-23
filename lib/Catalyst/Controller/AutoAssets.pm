@@ -466,6 +466,9 @@ type.
 Does not currently work on all Windows platforms because of the file locking code.
 This will be refactored/generalized in a later version.
 
+Rebuilds assets on every request if they are empty (i.e. no files within the include_dir) FIXME
+
+
 =head1 SEE ALSO
 
 =over
