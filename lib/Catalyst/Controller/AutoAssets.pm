@@ -464,13 +464,30 @@ Convenience method to generate a set of tags, such as CSS <link> and JS <script>
 into the <head> section of an HTML document. What this returns, if anything, is dependent on the asset
 type.
 
-=head1 BUGS
+=head1 BUGS/TODO
 
-Does not currently work on all Windows platforms because of the file locking code.
+=over
+
+=item Does not currently work on all Windows platforms because of the file locking code.
 This will be refactored/generalized in a later version.
 
-Rebuilds assets on every request if they are empty (i.e. no files within the include_dir) FIXME
+=item Rebuilds assets on every request if they are empty (i.e. no files within the include_dir) FIXME
 
+=item Newly added files within a subdirectory do not trigger a rebuild and cannot be accessed, even directly,
+because it does not change the mtime of the top directory.
+See 'all_dirs' option below for a possible fix for this problem. The other fix would be to always check the
+file system for an exact subfile path, even if it does not exist in the subfile_meta data.
+
+=item Needs an 'mtime_check_mode' option to be able to control how thorough the mtime check on every
+request is. This mainly applies to Directory assets and could be tweaked according to the number of files.
+Possible modes could be 'top_dir' (only check the mtime of the top directory, default for Directory), 
+'all_dirs' (check all sub directories), 'all' (check all include files, default for CSS/JS) and 'none'
+to turn off the real-time mtime checks entirely.
+
+=item Needs a 'require_checksum' option to be able to require a specific asset fingerprint (such as for
+included libs that should always have the same checksum, like the ExtJS 3.4.0 release, for instance)
+
+=back
 
 =head1 SEE ALSO
 
