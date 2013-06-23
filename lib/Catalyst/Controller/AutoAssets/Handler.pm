@@ -146,18 +146,22 @@ sub is_current_request_arg {
 
 sub current_request  {
   my ( $self, $c, $arg, @args ) = @_;
-  $c->response->header('Cache-Control' => 'no-cache');
-  $c->response->header(%{$self->current_response_headers});
+  my %headers = (
+    'Cache-Control' => 'no-cache',
+    %{$self->current_response_headers}
+  );
+  $c->response->header( $_ => $headers{$_} ) for (keys %headers);
   $c->response->redirect(join('/',$self->asset_path,@args), 307);
   return $c->detach;
 }
 
 sub static_request  {
   my ( $self, $c, $arg, @args ) = @_;
-  
-  $c->response->header('Cache-Control' => 'no-cache');
-  $c->response->header(%{$self->static_response_headers});
-  
+  my %headers = (
+    'Cache-Control' => 'no-cache',
+    %{$self->static_response_headers}
+  );
+  $c->response->header( $_ => $headers{$_} ) for (keys %headers);
   # Simulate a request to the current sha1 checksum:
   return $self->handle_asset_request($c, $self->asset_name, @args);
 }
