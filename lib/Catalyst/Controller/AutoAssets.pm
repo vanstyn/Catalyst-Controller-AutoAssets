@@ -86,6 +86,9 @@ sub unknown_asset {
   my ($self,$c,$asset) = @_;
   $asset ||= $c->req->path;
   $c->res->status(404);
+  # Clear any other headers that might have been set, like Etag. We don't
+  # want to allow negative caching
+  $c->res->headers->clear;
   $c->res->header( 'Content-Type' => 'text/plain' );
   $c->res->body( "No such asset '$asset'" );
   $self->release_build_lock;
