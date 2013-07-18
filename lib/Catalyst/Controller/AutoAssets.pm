@@ -358,6 +358,12 @@ C<outfile> filehandle interface. See L<JavaScript::Minifier> and L<CSS::Minifier
 
 Does not apply to the C<Directory> asset type.
 
+=head2 scopify
+
+Applies only to the C<CSS> asset type. CSS will be scopified using L<CSS::Scopifier>. The scopify param
+should be an ArrayRef that will be used to pass to argument list of the C<scopify> method. Note that
+scopify and minify are net yet supported together. 
+
 =head2 work_dir
 
 The directory where asset-specific files are generated and stored. This contains the checksum/fingerprint 

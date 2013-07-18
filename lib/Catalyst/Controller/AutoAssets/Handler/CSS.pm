@@ -11,8 +11,10 @@ with 'Catalyst::Controller::AutoAssets::Handler';
 
 use Path::Class 0.32 qw( dir file );
 use Module::Runtime;
+use CSS::Scopifier;
 
 has 'minify', is => 'ro', isa => 'Bool', default => sub{0};
+has 'scopify', is => 'ro', isa => 'Maybe[ArrayRef]', default => sub{undef};
 
 sub BUILD {
   my $self = shift;
@@ -94,6 +96,18 @@ sub write_built_file {
   }
   else {
     $fd->write($_) for ( map { $_->slurp . "\r\n" } @$files );
+  }
+  
+  # TODO/FIXME: if we minified this will effectively reverse it. I left
+  # it this way for now because of the annoying, cumbersome CSS::Minifier
+  # API which wants to work with filehandles. Best solution is probably
+  # to use another temporary file (and also do the scopify before the minify)
+  if($self->scopify) {
+    $fd->close;
+    my $CSS = CSS::Scopifier->new();
+    $CSS->read($self->built_file);
+    $CSS->scopify(@{$self->scopify});
+    $self->built_file->spew($CSS->write_string);
   }
 }
 

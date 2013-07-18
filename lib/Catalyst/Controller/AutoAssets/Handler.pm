@@ -504,7 +504,7 @@ sub build_asset {
 
   my $fd = $self->built_file->openw or die $!;
   $self->write_built_file($fd,$files);
-  $fd->close;
+  $fd->close if ($fd->opened);
   
   # Update the fingerprint (global) and cached mtimes (specific to the current process)
   $self->inc_mtimes($opt->{inc_mtimes});
