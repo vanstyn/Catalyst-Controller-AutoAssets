@@ -11,7 +11,7 @@ with 'Catalyst::Controller::AutoAssets::Handler';
 
 use Path::Class 0.32 qw( dir file );
 use Module::Runtime;
-use CSS::Scopifier;
+use CSS::Scopifier 0.02;
 
 has 'minify', is => 'ro', isa => 'Bool', default => sub{0};
 has 'scopify', is => 'ro', isa => 'Maybe[ArrayRef]', default => sub{undef};
@@ -106,6 +106,13 @@ sub write_built_file {
     $fd->close;
     my $CSS = CSS::Scopifier->new();
     $CSS->read($self->built_file);
+    
+    # New: If there was an error parsing the CSS, we're better off
+    # dying right away rather than allowing bad code through
+    my $err = $CSS->errstr;
+    Catalyst::Exception->throw("CSS::Scopifer/CSS::Tiny error: $err")
+      if($err);
+    
     $CSS->scopify(@{$self->scopify});
     $self->built_file->spew($CSS->write_string);
   }
