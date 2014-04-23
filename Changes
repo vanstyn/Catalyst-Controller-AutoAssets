@@ -1,5 +1,8 @@
 Revision history for perl module Catalyst::Controller::AutoAssets
 
+0.25 2014-04-23
+    - Built asset messages now only log in debug mode
+
 0.24 2013-07-24
     - Added Changes file, following the format in CPAN::Changes::Spec
     - CSS::Scopifier/CSS::Tiny errors now fatal
