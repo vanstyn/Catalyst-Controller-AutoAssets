@@ -469,10 +469,10 @@ sub prepare_asset {
   
   $self->build_asset($opt);
   
-  $self->_app->log->info(
+  $self->_app->log->debug(
     "Built asset: " . $self->base_path . '/' . $self->asset_name .
     ' in ' . sprintf("%.3f", tv_interval($start) ) . 's'
-  );
+  ) if ($self->_app->debug);
 
   # Release the lock and return:
   $self->_persist_state;
