@@ -1,5 +1,8 @@
 Revision history for perl module Catalyst::Controller::AutoAssets
 
+0.26 2014-05-13
+    - Log messages now suppressed in the same manner as Static::Simple
+
 0.25 2014-04-23
     - Built asset messages now only log in debug mode
 

@@ -2,13 +2,22 @@ package Catalyst::Plugin::AutoAssets;
 use strict;
 use warnings;
 
-our $VERSION = 0.25;
+our $VERSION = 0.26;
 
 use Moose::Role;
 use namespace::autoclean;
 
 use CatalystX::InjectComponent;
 use Catalyst::Controller::AutoAssets;
+
+after setup_finalize => sub {
+  my $c = shift;
+
+  # New: Turn off new 'autoflush' flag in logger (see Catalyst::Log).
+  # This is needed to surpress output of debug log messages for 
+  # static requests (see no_log opt in Catalyst::Plugin::AutoAssets)
+  $c->log->autoflush(0) if $c->log->can('autoflush');
+};
 
 before 'setup_components' => sub { (shift)->inject_asset_controllers(@_) };
 

@@ -2,7 +2,7 @@ package Catalyst::Controller::AutoAssets;
 use strict;
 use warnings;
 
-our $VERSION = 0.25;
+our $VERSION = 0.26;
 
 use Moose;
 use namespace::autoclean;
@@ -11,6 +11,7 @@ require Module::Runtime;
 BEGIN { extends 'Catalyst::Controller' }
 
 has 'type', is => 'ro', isa => 'Str', required => 1;
+has 'no_logs', is => 'rw', isa => 'Bool', default => sub {1};
 
 has '_module_version', is => 'ro', isa => 'Str', default => $VERSION;
 
@@ -72,6 +73,12 @@ sub BUILD {
 
 sub index :Path {
   my ($self, $c, @args) = @_;
+  
+  # New: set 'abort' just like Static::Simple to suppress log messages:
+  if ( $self->no_logs && $c->log->can('abort') ) {
+    $c->log->abort( 1 );
+  }
+  
   $self->request($c,@args);
   $c->detach;
 }
@@ -242,6 +249,10 @@ The js/css types provide a bonus mode of operation to provide a simple and conve
 manage groups of CSS and JavaScript files to be automatically deployed in the application. This
 is also particularly useful during development. Production applications with their own management
 and build process for CSS and JavaScript would simply use the C<Directory> type.
+
+=head2 no_logs
+
+Defaults to true to suppress log messages in the same manner as Static::Simple.
 
 =head2 include
 
