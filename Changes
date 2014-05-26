@@ -1,5 +1,8 @@
 Revision history for perl module Catalyst::Controller::AutoAssets
 
+0.27 2014-05-26
+    - Fixed bug in detecting changes to directory asset subfiles
+
 0.26 2014-05-13
     - Log messages now suppressed in the same manner as Static::Simple
 
