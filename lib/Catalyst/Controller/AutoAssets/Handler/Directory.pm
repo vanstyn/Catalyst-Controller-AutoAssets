@@ -132,7 +132,7 @@ sub _subfile_mtime_verify {
   
   # If the file doesn't exist on disk or is in the excluded paths there 
   # is no need to clear the asset. We already know it will return a 404
-  return ($self->_excluded_paths->{$path} || ! -f $File);
+  return if ($self->_excluded_paths->{$path} || ! -f $File);
 
   # Check the mtime of the requested file to see if it has changed
   # and force a rebuild if it has. This is done because it is too
