@@ -14,7 +14,7 @@ requires qw(
 
 use Cwd;
 use Path::Class 0.32 qw( dir file );
-use Catalyst::Controller::AutoAssets::LockFile;
+use Fcntl;
 use File::stat qw(stat);
 use Catalyst::Utils;
 use Time::HiRes qw(gettimeofday tv_interval);
