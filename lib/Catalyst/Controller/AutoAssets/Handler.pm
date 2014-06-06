@@ -566,30 +566,30 @@ sub html_head_tags { undef }
 # cross-platform compatibility that most lock module sdon't have.
 # 
 sub _get_lock {
-	my ($self, $fname, $timeout)= @_;
-	my $fh;
-	sysopen($fh, $fname, O_RDWR|O_CREAT|O_EXCL, 0644)
-		or sysopen($fh, $fname, O_RDWR)
-		or croak "Unable to create or open $fname";
-	
-	try { fcntl($fh, F_SETFD, FD_CLOEXEC) } or carp "Failed to set close-on-exec for $fname";
-	
-	# Try to get lock until timeout.  We poll because there isn't a sensible
-	# way to wait for the lock.  (I don't consider SIGALRM to be very sensible)
-	my $deadline= Time::HiRes::time() + $timeout;
-	my $locked= 0;
-	while (1) {
-		last if flock($fh, LOCK_EX|LOCK_NB);
-		croak "Can't get lock on $fname after $timeout seconds" if Time::HiRes::time() >= $deadline;
-		Time::HiRes::sleep(0.4);
-	}
-	
-	# Succeeded in getting the lock, so write our pid.
-    my $data= "$$";
-    syswrite($fh, $data, length($data)) or croak "Failed to write pid to $fname";
-    truncate($fh, length($data)) or croak "Failed to resize $fname";
-	
-	return $fh;
+  my ($self, $fname, $timeout)= @_;
+  my $fh;
+  sysopen($fh, $fname, O_RDWR|O_CREAT|O_EXCL, 0644)
+    or sysopen($fh, $fname, O_RDWR)
+    or croak "Unable to create or open $fname";
+  
+  try { fcntl($fh, F_SETFD, FD_CLOEXEC) } or carp "Failed to set close-on-exec for $fname";
+  
+  # Try to get lock until timeout.  We poll because there isn't a sensible
+  # way to wait for the lock.  (I don't consider SIGALRM to be very sensible)
+  my $deadline= Time::HiRes::time() + $timeout;
+  my $locked= 0;
+  while (1) {
+    last if flock($fh, LOCK_EX|LOCK_NB);
+    croak "Can't get lock on $fname after $timeout seconds" if Time::HiRes::time() >= $deadline;
+    Time::HiRes::sleep(0.4);
+  }
+  
+  # Succeeded in getting the lock, so write our pid.
+  my $data= "$$";
+  syswrite($fh, $data, length($data)) or croak "Failed to write pid to $fname";
+  truncate($fh, length($data)) or croak "Failed to resize $fname";
+  
+  return $fh;
 }
 
 1;
