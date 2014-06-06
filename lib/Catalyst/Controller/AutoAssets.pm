@@ -29,7 +29,7 @@ around BUILDARGS => sub {
 has '_Handler' => (
   is => 'ro', init_arg => undef, lazy => 1,
   does => 'Catalyst::Controller::AutoAssets::Handler',
-  handles => [qw(request asset_path html_head_tags release_build_lock)],
+  handles => [qw(request asset_path html_head_tags)],
   default => sub {
     my $self = shift;
     my $class = $self->_resolve_handler_class($self->type);
@@ -83,12 +83,6 @@ sub index :Path {
   $c->detach;
 }
 
-sub end :Private {
-  my ($self,$c) = @_;
-  # Make sure we never keep a build lock past the end of a request:
-  $self->release_build_lock;
-}
-
 sub unknown_asset {
   my ($self,$c,$asset) = @_;
   $asset ||= $c->req->path;
@@ -98,7 +92,6 @@ sub unknown_asset {
   $c->res->headers->clear;
   $c->res->header( 'Content-Type' => 'text/plain' );
   $c->res->body( "No such asset '$asset'" );
-  $self->release_build_lock;
   return $c->detach;
 }
 
@@ -484,9 +477,6 @@ type.
 =head1 BUGS/TODO
 
 =over
-
-=item Does not currently work on all Windows platforms because of the file locking code.
-This will be refactored/generalized in a later version.
 
 =item Rebuilds assets on every request if they are empty (i.e. no files within the include_dir) FIXME
 

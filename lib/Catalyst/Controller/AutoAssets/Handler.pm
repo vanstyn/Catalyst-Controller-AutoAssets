@@ -226,7 +226,6 @@ has 'lock_file', is => 'ro', isa => 'Path::Class::File', lazy => 1, default => s
   my $self = shift;
   return file($self->work_dir,'lockfile');
 };
-has '_lock_object', is => 'rw';
 
 has 'includes', is => 'ro', isa => 'ArrayRef', lazy => 1, default => sub {
   my $self = shift;
@@ -466,7 +465,9 @@ sub prepare_asset {
   ### Do a rebuild:
 
   # --- Blocks for up to 2 minutes waiting to get an exclusive lock or dies
-  $self->get_build_lock;
+  # The lock is held until it goes out of scope
+  my $lock= try { $self->_get_lock($self->lock_file, $self->max_lock_wait); }
+	   catch { print STDERR $_."\n"; Catalyst::Exception->throw("AutoAssets: aborting waiting for lock after ".$self->max_lock_wait); };
   # ---
   
   $self->build_asset($opt);
@@ -478,7 +479,7 @@ sub prepare_asset {
 
   # Release the lock and return:
   $self->_persist_state;
-  return $self->release_build_lock;
+  return 1;
 }
 
 sub build_asset {
@@ -499,7 +500,7 @@ sub build_asset {
     $self->inc_mtimes($inc_mtimes);
     $self->built_mtime($built_mtime);
     $self->_persist_state;
-    return $self->release_build_lock;
+    return 1;
   }
 
   ### Ok, we really need to do a full rebuild:
@@ -554,26 +555,6 @@ sub asset_path {
 
 sub html_head_tags { undef }
 
-
-sub get_build_lock_wait {
-  my $self = shift;
-  return defined $self->_lock_object
-    or try { $self->_lock_object( $self->_get_lock($self->lock_file, $self->max_lock_wait) ); 1; }
-	   catch { Catalyst::Exception->throw("AutoAssets: aborting waiting for lock after ".$self->max_lock_wait); };
-}
-
-sub get_build_lock {
-  my $self = shift;
-  return defined $self->_lock_object
-    or try { $self->_lock_object( $self->_get_lock($self->lock_file, 0) ); 1; }
-       catch { 0; };
-}
-
-sub release_build_lock {
-  my $self = shift;
-  $self->_lock_object(undef);
-}
-
 # This locks a file or dies trying, and on success, returns a "lock object"
 # which will release the lock if it goes out of scope.  At the moment, this
 # "object" is just a file handle.
@@ -585,8 +566,8 @@ sub release_build_lock {
 sub _get_lock {
 	my ($self, $fname, $timeout)= @_;
 	my $fh;
-	sysopen($fh, $self->path, O_RDWR|O_CREAT|O_EXCL, 0644)
-		or sysopen($fh, $self->path, O_RDWR)
+	sysopen($fh, $fname, O_RDWR|O_CREAT|O_EXCL, 0644)
+		or sysopen($fh, $fname, O_RDWR)
 		or croak "Unable to create or open $fname";
 	
 	try { fcntl($fh, F_SETFD, FD_CLOEXEC) } or carp "Failed to set close-on-exec for $fname";
