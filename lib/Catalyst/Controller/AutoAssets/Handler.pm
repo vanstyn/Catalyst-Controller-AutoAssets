@@ -14,7 +14,8 @@ requires qw(
 
 use Cwd;
 use Path::Class 0.32 qw( dir file );
-use Fcntl;
+use Fcntl qw( :DEFAULT :flock );
+use Carp;
 use File::stat qw(stat);
 use Catalyst::Utils;
 use Time::HiRes qw(gettimeofday tv_interval);
@@ -558,7 +559,7 @@ sub get_build_lock_wait {
   my $self = shift;
   return defined $self->_lock_object
     or try { $self->_lock_object( $self->_get_lock($self->lock_file, $self->max_lock_wait) ); 1; }
-	   catch { Catalyst::Exception->throw("AutoAssets: aborting waiting for lock after $elapsed"); };
+	   catch { Catalyst::Exception->throw("AutoAssets: aborting waiting for lock after ".$self->max_lock_wait); };
 }
 
 sub get_build_lock {
@@ -607,6 +608,8 @@ sub _get_lock {
 	
 	return $fh;
 }
+
+1;
 
 __END__
 
