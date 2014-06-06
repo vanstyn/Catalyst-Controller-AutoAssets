@@ -464,12 +464,18 @@ sub prepare_asset {
 
   ### Do a rebuild:
 
-  # --- Blocks for up to 2 minutes waiting to get an exclusive lock or dies
-  # The lock is held until it goes out of scope
-  my $lock= try { $self->_get_lock($self->lock_file, $self->max_lock_wait); }
-	   catch { print STDERR $_."\n"; Catalyst::Exception->throw("AutoAssets: aborting waiting for lock after ".$self->max_lock_wait); };
+  # --- Blocks for up to max_lock_wait seconds waiting to get an exclusive lock
+  # The lock is held until it goes out of scope.
+  # If we fail to get the lock, we just continue anyway in hopes that the second
+  # build won't corrupt the first, which is arguably better than killing the
+  # request.
+  my $lock= try { $self->_get_lock($self->lock_file, $self->max_lock_wait); };
   # ---
   
+  if ($ENV{SLEEP}) {
+	print STDERR "Going to call build_asset, but sleeping for $ENV{SLEEP} first\n";
+	sleep $ENV{SLEEP};
+  }
   $self->build_asset($opt);
   
   $self->_app->log->debug(
