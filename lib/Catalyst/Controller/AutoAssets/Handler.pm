@@ -472,10 +472,6 @@ sub prepare_asset {
   my $lock= try { $self->_get_lock($self->lock_file, $self->max_lock_wait); };
   # ---
   
-  if ($ENV{SLEEP}) {
-	print STDERR "Going to call build_asset, but sleeping for $ENV{SLEEP} first\n";
-	sleep $ENV{SLEEP};
-  }
   $self->build_asset($opt);
   
   $self->_app->log->debug(
