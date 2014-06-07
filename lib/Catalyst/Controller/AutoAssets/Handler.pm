@@ -14,7 +14,8 @@ requires qw(
 
 use Cwd;
 use Path::Class 0.32 qw( dir file );
-use Fcntl qw( :DEFAULT :flock :seek F_GETFL );
+use Fcntl qw( :DEFAULT :flock );
+use Carp;
 use File::stat qw(stat);
 use Catalyst::Utils;
 use Time::HiRes qw(gettimeofday tv_interval);
@@ -463,8 +464,12 @@ sub prepare_asset {
 
   ### Do a rebuild:
 
-  # --- Blocks for up to 2 minutes waiting to get an exclusive lock or dies
-  $self->get_build_lock;
+  # --- Blocks for up to max_lock_wait seconds waiting to get an exclusive lock
+  # The lock is held until it goes out of scope.
+  # If we fail to get the lock, we just continue anyway in hopes that the second
+  # build won't corrupt the first, which is arguably better than killing the
+  # request.
+  my $lock= try { $self->_get_lock($self->lock_file, $self->max_lock_wait); };
   # ---
   
   $self->build_asset($opt);
@@ -476,7 +481,7 @@ sub prepare_asset {
 
   # Release the lock and return:
   $self->_persist_state;
-  return $self->release_build_lock;
+  return 1;
 }
 
 sub build_asset {
@@ -497,7 +502,7 @@ sub build_asset {
     $self->inc_mtimes($inc_mtimes);
     $self->built_mtime($built_mtime);
     $self->_persist_state;
-    return $self->release_build_lock;
+    return 1;
   }
 
   ### Ok, we really need to do a full rebuild:
@@ -552,42 +557,40 @@ sub asset_path {
 
 sub html_head_tags { undef }
 
-
-sub get_build_lock_wait {
-  my $self = shift;
-  my $start = time;
-  until($self->get_build_lock) {
-    my $elapsed = time - $start;
-    Catalyst::Exception->throw("AutoAssets: aborting waiting for lock after $elapsed")
-      if ($elapsed >= $self->max_lock_wait);
-    sleep 1;
+# This locks a file or dies trying, and on success, returns a "lock object"
+# which will release the lock if it goes out of scope.  At the moment, this
+# "object" is just a file handle.
+#
+# This lock is specifically *not* inherited by child processes (thanks to
+# fcntl(FL_CLOEXEC), and in fact, this design principle gives it
+# cross-platform compatibility that most lock module sdon't have.
+# 
+sub _get_lock {
+  my ($self, $fname, $timeout)= @_;
+  my $fh;
+  sysopen($fh, $fname, O_RDWR|O_CREAT|O_EXCL, 0644)
+    or sysopen($fh, $fname, O_RDWR)
+    or croak "Unable to create or open $fname";
+  
+  try { fcntl($fh, F_SETFD, FD_CLOEXEC) }
+    or carp "Failed to set close-on-exec for $fname (see BUGS in Catalyst::Controller::AutoAssets)";
+  
+  # Try to get lock until timeout.  We poll because there isn't a sensible
+  # way to wait for the lock.  (I don't consider SIGALRM to be very sensible)
+  my $deadline= Time::HiRes::time() + $timeout;
+  my $locked= 0;
+  while (1) {
+    last if flock($fh, LOCK_EX|LOCK_NB);
+    croak "Can't get lock on $fname after $timeout seconds" if Time::HiRes::time() >= $deadline;
+    Time::HiRes::sleep(0.4);
   }
-}
-
-# TODO: find a lib that does this with better cross-platform support. This
-# is only known to work under Linux
-sub get_build_lock {
-  my $self = shift;
-  my $fname = $self->lock_file;
-  sysopen(LOCKHANDLE, $fname, O_RDWR|O_CREAT|O_EXCL, 0644)
-    or sysopen(LOCKHANDLE, $fname, O_RDWR)
-    or die "Unable to create or open $fname\n";
-  fcntl(LOCKHANDLE, F_SETFD, FD_CLOEXEC) or die "Failed to set close-on-exec for $fname";
-  my $lockStruct= pack('sslll', F_WRLCK, SEEK_SET, 0, 0, $$);
-  if (fcntl(LOCKHANDLE, F_SETLK, $lockStruct)) {
-    my $data= "$$";
-    syswrite(LOCKHANDLE, $data, length($data)) or die "Failed to write pid to $fname";
-    truncate(LOCKHANDLE, length($data)) or die "Failed to resize $fname";
-    # we do not close the file, so that we maintain the lock.
-    return 1;
-  }
-  $self->release_build_lock;
-  return 0;
-}
-
-sub release_build_lock {
-  my $self = shift;
-  close LOCKHANDLE;
+  
+  # Succeeded in getting the lock, so write our pid.
+  my $data= "$$";
+  syswrite($fh, $data, length($data)) or croak "Failed to write pid to $fname";
+  truncate($fh, length($data)) or croak "Failed to resize $fname";
+  
+  return $fh;
 }
 
 1;
