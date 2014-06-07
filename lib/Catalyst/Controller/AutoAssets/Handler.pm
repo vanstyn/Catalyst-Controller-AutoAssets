@@ -572,7 +572,8 @@ sub _get_lock {
     or sysopen($fh, $fname, O_RDWR)
     or croak "Unable to create or open $fname";
   
-  try { fcntl($fh, F_SETFD, FD_CLOEXEC) } or carp "Failed to set close-on-exec for $fname";
+  try { fcntl($fh, F_SETFD, FD_CLOEXEC) }
+    or carp "Failed to set close-on-exec for $fname (see BUGS in Catalyst::Controller::AutoAssets)";
   
   # Try to get lock until timeout.  We poll because there isn't a sensible
   # way to wait for the lock.  (I don't consider SIGALRM to be very sensible)

@@ -384,12 +384,14 @@ Defaults to:
 Number of seconds to wait to obtain an exclusive lock when recalculating/regenerating. For thread-safety, when the system
 needs to regenerate the asset (fingerprint and built file) it obtains an exclusive lock on the lockfile in the 
 work_dir. If another thread/process already has a lock, the system will wait for up to C<max_lock_wait> seconds
-before giving up and throwing an exception.
+before proceeding anyway.
 
 Note that this is only relevant when the source/include content changes while the app is running (which should never 
 happen in a production environment).
 
 Defaults to 120 seconds.
+
+Also, see BUGS for caveats about locking.
 
 =head2 max_fingerprint_calc_age
 
@@ -495,6 +497,19 @@ to turn off the real-time mtime checks entirely.
 included libs that should always have the same checksum, like the ExtJS 3.4.0 release, for instance)
 
 =back
+
+=head1 BUGS
+
+The AutoAssets handler uses a lock file to prevent simultaneous builds on the
+same resource.  This lock file is implemented with flock() and also setting
+FD_CLOEXEC on the file handle, so there shouldn't be much danger of the lock
+leaking to a child process, UNLESS your system doesn't support FD_CLOEXEC,
+such as on Windows.  So, if you're on Windows and shell out during the
+L<build_asset> method, and your external program hangs, the lock won't get
+released until that program is killed, regardless of whether you restart
+your web service.  (or, you can try to close all un-needed file descriptors
+before exec()ing the external program, and avoid the problem, which is a
+good policy anyway!)
 
 =head1 SEE ALSO
 
