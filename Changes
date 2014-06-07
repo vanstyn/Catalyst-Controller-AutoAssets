@@ -1,5 +1,9 @@
 Revision history for perl module Catalyst::Controller::AutoAssets
 
+0.28 2014-06-06
+    - Changed locking code to be cross-platform (flock) and more
+      robust by using a scoped lock object
+
 0.27 2014-05-26
     - Fixed bug in detecting changes to directory asset subfiles
 
