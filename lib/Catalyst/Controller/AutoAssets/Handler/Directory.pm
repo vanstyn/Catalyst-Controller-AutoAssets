@@ -99,7 +99,7 @@ sub set_subfile_meta {
   my $self = shift;
   my $list = shift;
   $self->subfile_meta({
-    map { join('/', $_->relative($self->dir_root)->components) => {
+    map { join('/', grep { $_ ne '.' } $_->relative($self->dir_root)->components) => {
       file => $_,
       mtime => $_->stat->mtime,
       content_type => $self->content_type_resolver->($self,$_)
@@ -217,7 +217,7 @@ around build_asset => sub {
 has '_excluded_paths', is => 'rw', isa => 'HashRef', default => sub {{}};
 sub _record_excluded_files {
   my ($self, $files) = @_;
-  my @relative = map { join('/', file($_)->relative($self->dir_root)->components) } @$files;
+  my @relative = map { join('/', grep { $_ ne '.' } file($_)->relative($self->dir_root)->components) } @$files;
   my %hash = map { $_ => 1 } map { "$_" } @relative;
   $self->_excluded_paths(\%hash);
 }
