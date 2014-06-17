@@ -330,14 +330,14 @@ sub calculate_fingerprint {
 sub current_fingerprint {
   my $self = shift;
   return undef unless (-f $self->fingerprint_file);
-  my $fingerprint = $self->fingerprint_file->slurp;
+  my $fingerprint = $self->fingerprint_file->slurp(iomode => '<:raw');
   return $fingerprint;
 }
 
 sub save_fingerprint {
   my $self = shift;
   my $fingerprint = shift or die "Expected fingerprint/checksum argument";
-  return $self->fingerprint_file->spew($fingerprint);
+  return $self->fingerprint_file->spew(iomode => '>:raw', $fingerprint);
 }
 
 sub calculate_save_fingerprint {
@@ -508,6 +508,7 @@ sub build_asset {
   ### Ok, we really need to do a full rebuild:
 
   my $fd = $self->built_file->openw or die $!;
+  binmode $fd;
   $self->write_built_file($fd,$files);
   $fd->close if ($fd->opened);
   
@@ -528,6 +529,7 @@ sub file_checksum {
   my $Sha1 = Digest::SHA1->new;
   foreach my $file ( grep { -f $_ } @$files ) {
     my $fh = $file->openr or die "$! : $file\n";
+    binmode $fh;
     $Sha1->addfile($fh);
     $fh->close;
   }

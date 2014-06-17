@@ -11,6 +11,8 @@ plan skip_all => "JavaScript::Minifier required for testing minify" if $@;
 
 use Path::Class 0.32 qw( dir file );
 my $work_dir = dir("$Bin/var/tmp/work_dir");
+$work_dir->rmtree;
+$work_dir->mkpath;
 
 {
   package TestApp;

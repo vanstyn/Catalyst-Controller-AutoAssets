@@ -46,7 +46,9 @@ sub _set_file_response {
     'Cache-Control' => $self->cache_control_header
   );
 
-  return $c->response->body( $file->openr );
+  my $f= $file->openr;
+  binmode $f;
+  return $c->response->body( $f );
 }
 
 
@@ -97,7 +99,7 @@ sub set_subfile_meta {
   my $self = shift;
   my $list = shift;
   $self->subfile_meta({
-    map { $_->relative($self->dir_root)->stringify => {
+    map { join('/', grep { $_ ne '.' } $_->relative($self->dir_root)->components) => {
       file => $_,
       mtime => $_->stat->mtime,
       content_type => $self->content_type_resolver->($self,$_)
@@ -215,7 +217,7 @@ around build_asset => sub {
 has '_excluded_paths', is => 'rw', isa => 'HashRef', default => sub {{}};
 sub _record_excluded_files {
   my ($self, $files) = @_;
-  my @relative = map { file($_)->relative($self->dir_root) } @$files;
+  my @relative = map { join('/', grep { $_ ne '.' } file($_)->relative($self->dir_root)->components) } @$files;
   my %hash = map { $_ => 1 } map { "$_" } @relative;
   $self->_excluded_paths(\%hash);
 }
@@ -224,7 +226,7 @@ sub write_built_file {
   my ($self, $fd, $files) = @_;
   # The built file is just a placeholder in the case of 'directory' type 
   # asset whose data is served from the original files
-  my @relative = map { file($_)->relative($self->dir_root) } @$files;
+  my @relative = map { join('/', grep { $_ ne '.' } file($_)->relative($self->dir_root)->components) } @$files;
   $fd->write(join("\r\n",@relative) . "\r\n");
 }
 

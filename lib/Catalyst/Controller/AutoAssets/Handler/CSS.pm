@@ -85,7 +85,6 @@ sub html_head_tags {
 
 sub write_built_file {
   my ($self, $fd, $files) = @_;
-  
   if($self->minify && $self->minifier) {
     foreach my $file (@$files) {
       open(INFILE, $file) or die $!;
@@ -95,7 +94,7 @@ sub write_built_file {
     }
   }
   else {
-    $fd->write($_) for ( map { $_->slurp . "\r\n" } @$files );
+    $fd->write($_) for ( map { $_->slurp(iomode => '<:raw') . "\r\n" } @$files );
   }
   
   # TODO/FIXME: if we minified this will effectively reverse it. I left
@@ -114,7 +113,7 @@ sub write_built_file {
       if($err);
     
     $CSS->scopify(@{$self->scopify});
-    $self->built_file->spew($CSS->write_string);
+    $self->built_file->spew(iomode => '>:raw', $CSS->write_string);
   }
 }
 
