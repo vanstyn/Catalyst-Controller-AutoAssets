@@ -1,5 +1,8 @@
 Revision history for perl module Catalyst::Controller::AutoAssets
 
+0.30 2014-12-09
+    - Optional handling for $c->mount_url (RapidApp-only feature)
+
 0.29 2014-06-17
     - More fixes for Win32 compatibility
 
