@@ -541,7 +541,8 @@ sub asset_name { (shift)->current_fingerprint }
 
 sub base_path {
   my $self = shift;
-  return '/' . $self->action_namespace($self->_app); 
+  my $pfx = try{RapidApp->active_request_context->mount_url} || '';
+  return join('/',$pfx,$self->action_namespace($self->_app)); 
 }
 
 # this is just used for some internal optimization to avoid calling stat
