@@ -14,7 +14,7 @@ extends 'Catalyst::Controller::AutoAssets::Handler::Directory';
 # first will be used)
 has 'flatten_paths', is => 'ro', isa => 'Bool', default => 0;
 
-has 'include_regex', is => 'ro', isa => 'Maybe[Str]', default => '\.(png|jpg|jpeg|gif|bmp|tif|tiff)$';
+has 'include_regex', is => 'ro', isa => 'Maybe[Str]', default => '\.(png|jpg|jpeg|gif|bmp|tif|tiff|svg)$';
 has 'regex_ignore_case', is => 'ro', isa => 'Bool', default => 1;
 
 has 'manifest', is => 'rw', isa => 'HashRef', default => sub {{}};
@@ -166,7 +166,7 @@ This class extends L<Catalyst::Controller::AutoAssets::Handler::Directory>. Only
 
 Optional regex ($string) to require files to match to be included.
 
-Defaults to C<'\.(png|jpg|jpeg|gif|bmp|tif|tiff)$'>
+Defaults to C<'\.(png|jpg|jpeg|gif|bmp|tif|tiff|svg)$'>
 
 =head2 regex_ignore_case
 
