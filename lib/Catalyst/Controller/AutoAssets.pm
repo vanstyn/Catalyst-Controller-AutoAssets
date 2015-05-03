@@ -71,7 +71,7 @@ sub BUILD {
   $self->_Handler;
 }
 
-sub index :Path {
+sub index :Chained :PathPrefix {
   my ($self, $c, @args) = @_;
   
   # New: set 'abort' just like Static::Simple to suppress log messages:
