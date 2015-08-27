@@ -1,5 +1,8 @@
 Revision history for perl module Catalyst::Controller::AutoAssets
 
+0.33 2015-08-27
+    - Now uses CSS::Scopifier::Group for scopify (VANSTYN) 
+
 0.32 2015-05-08
     - Switch to Chained controller actions - PR #5 (GETTY)
 
