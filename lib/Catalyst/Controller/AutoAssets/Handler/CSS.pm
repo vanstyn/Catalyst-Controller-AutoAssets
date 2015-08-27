@@ -11,7 +11,8 @@ with 'Catalyst::Controller::AutoAssets::Handler';
 
 use Path::Class 0.32 qw( dir file );
 use Module::Runtime;
-use CSS::Scopifier 0.02;
+use CSS::Scopifier 0.04;
+use CSS::Scopifier::Group;
 
 has 'minify', is => 'ro', isa => 'Bool', default => sub{0};
 has 'scopify', is => 'ro', isa => 'Maybe[ArrayRef]', default => sub{undef};
@@ -103,13 +104,13 @@ sub write_built_file {
   # to use another temporary file (and also do the scopify before the minify)
   if($self->scopify) {
     $fd->close;
-    my $CSS = CSS::Scopifier->new();
+    my $CSS = CSS::Scopifier::Group->new();
     $CSS->read($self->built_file);
     
     # New: If there was an error parsing the CSS, we're better off
     # dying right away rather than allowing bad code through
     my $err = $CSS->errstr;
-    Catalyst::Exception->throw("CSS::Scopifer/CSS::Tiny error: $err")
+    Catalyst::Exception->throw("CSS::Scopifer::Group/CSS::Tiny error: $err")
       if($err);
     
     $CSS->scopify(@{$self->scopify});
