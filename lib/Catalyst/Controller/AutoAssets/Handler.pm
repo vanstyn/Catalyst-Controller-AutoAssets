@@ -34,7 +34,7 @@ has 'Controller' => (
 );
 
 # Directories to include
-has 'include', is => 'ro', isa => 'Str|ArrayRef[Str]', required => 1;
+has 'include', is => 'ro', isa => 'ScalarRef|Str|ArrayRef[ScalarRef|Str]', required => 1;
 
 # Optional regex to require files to match to be included
 has 'include_regex', is => 'ro', isa => 'Maybe[Str]', default => undef;
@@ -217,6 +217,16 @@ has 'built_file', is => 'ro', isa => 'Path::Class::File', lazy => 1, default => 
   return file($self->work_dir,$filename);
 };
 
+has 'scratch_dir', is => 'ro', isa => 'Path::Class::Dir', lazy => 1, default => sub {
+  my $self = shift;
+  
+  my $Dir = dir($self->work_dir,'_scratch');
+  $Dir->rmtree if (-d $Dir);
+  $Dir->mkpath;
+  
+  return $Dir
+};
+
 has 'fingerprint_file', is => 'ro', isa => 'Path::Class::File', lazy => 1, default => sub {
   my $self = shift;
   return file($self->work_dir,'fingerprint');
@@ -227,12 +237,23 @@ has 'lock_file', is => 'ro', isa => 'Path::Class::File', lazy => 1, default => s
   return file($self->work_dir,'lockfile');
 };
 
+
 has 'includes', is => 'ro', isa => 'ArrayRef', lazy => 1, default => sub {
   my $self = shift;
   my $rel = $self->include_relative_dir;
-  my @list = ref $self->include ? @{$self->include} : $self->include;
+
+  my @list = ((ref $self->include)||'') eq 'ARRAY' ? @{$self->include} : $self->include;
+  my $i = 0;
   return [ map {
-    my $inc = file($_);
+    my $inc; $i++;
+    if((ref($_)||'') eq 'SCALAR') {
+      # New support for ScalarRef includes ... we pre-dump them to a temp file
+      $inc = file( $self->scratch_dir, join('','_generated_include_file_',$i) );
+      $inc->spew(iomode => '>:raw', $$_);
+    }
+    else {
+      $inc = file($_);
+    }
     $inc = $rel->file($inc) unless ($inc->is_absolute);
     $inc = dir($inc) if (-d $inc); #<-- convert to Path::Class::Dir
     $inc->resolve
