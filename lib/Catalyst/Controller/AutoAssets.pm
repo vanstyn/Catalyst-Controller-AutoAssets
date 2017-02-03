@@ -251,9 +251,15 @@ Defaults to true to suppress log messages in the same manner as Static::Simple.
 
 B<Required> - String or ArrayRef. The path(s) on the local filesystem containing the source asset files. 
 For C<Directory> type this must be exactly one directory, while for C<CSS> and C<JS> it can
-be a list of directories. The C<include> directory becomes the root of the files hosted as-is
+be a list of directories or files. The C<include> directory becomes the root of the files hosted as-is
 for the C<Directory> type, while for C<CSS> and C<JS> asset types it is the include files 
 concatenated together (and possibly minified) to be served as the single file.
+
+Source content can also be supplied directly in the form of a ScalarRef (as ScalarRef directly, or
+included within the ArrayRef). This removes the need to have pre-existing file(s) on disk, 
+which may useful/convenient for cases involving code-generated content. This only makes sense for
+for concatenated asset types like C<CSS> and C<JS>, since there are no filenames to reference for 
+the case of a C<Directory> asset.
 
 =head2 include_regex
 
