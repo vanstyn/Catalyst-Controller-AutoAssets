@@ -26,40 +26,45 @@ sub inject_asset_controllers {
 
   my $config = $c->config->{'Plugin::AutoAssets'} or return;
   my $assets = $config->{assets} or die "No 'assets' defined in 'Plugin::AutoAssets' config!";
-
-  # Apply the Controller configs first:
-
-  my @controllers = ();
+  
   if (ref $assets eq 'HASH') {
-    $c->config( "Controller::$_" => $assets->{$_} ) and push @controllers, $_ 
-      for (keys %$assets);
+    $c->_inject_single_asset_controller($_,$assets->{$_}) for (keys %$assets);
   }
   elsif (ref $assets eq 'ARRAY') {
-    my %seen = ();
-    for my $orig (@$assets) {
-      my $cnf = { %$orig };
-      my $controller = delete $cnf->{controller} 
-        or die "Bad asset config; 'controller' class not specified";
-      die "Duplicate asset controller '$controller'" if ($seen{$controller}++);
-      $c->config( "Controller::$controller" => $cnf ) and push @controllers, $controller;
-    }
+    $c->_inject_single_asset_controller($_) for (@$assets);
   }
   else {
     die "'assets' must be a hashref or an arrayref";
   }
+}
 
-  # Now inject the new Controllers:
+sub _inject_single_asset_controller {
+  my ($c, $controller, $cfg) = @_;
+  
+  if(ref($controller)) {
+    $cfg = { %$controller };
+    $controller = delete $cfg->{controller} 
+      or die "Bad asset config; 'controller' class not specified";
+  }
+  
+  unless ($c->can('asset_controllers')) {
+    $c->mk_classdata('asset_controllers');
+    $c->asset_controllers([]);
+  }
+  my %seen = map {$_=>1} @{$c->asset_controllers};
+  
+  die "Duplicate asset controller '$controller'" if ($seen{$controller});
+  
+  push @{$c->asset_controllers}, $controller;
+  
+  $c->config( "Controller::$controller" => $cfg );
+  
   CatalystX::InjectComponent->inject(
     into => $c,
     component => 'Catalyst::Controller::AutoAssets',
-    as => $_
-  ) for (@controllers);
-
-  # Record the list in a class attr
-  $c->mk_classdata('asset_controllers');
-  $c->asset_controllers(\@controllers);
+    as => $controller
+  );
 }
-
 
 # Convenience method to get all configured html head tags of all the
 # asset controllers at once:
