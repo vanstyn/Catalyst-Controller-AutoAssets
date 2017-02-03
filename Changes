@@ -1,5 +1,9 @@
 Revision history for perl module Catalyst::Controller::AutoAssets
 
+0.40 2017-02-02
+    - 'include' param now supports ScalarRef vals for direct content (VANSTYN)
+    - Split out inject logic to new ->_inject_single_asset_controller (VANSTYN)
+
 0.33 2015-08-27
     - Now uses CSS::Scopifier::Group for scopify (VANSTYN) 
 
